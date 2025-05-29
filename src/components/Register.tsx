@@ -8,8 +8,6 @@ import { Button } from "@/components/ui/button";
 import { auth, db, signInWithGoogle } from "../firebase/firebase";
 import {
   createUserWithEmailAndPassword,
-  GoogleAuthProvider,
-  signInWithPopup,
 } from "firebase/auth";
 import {
   collection,

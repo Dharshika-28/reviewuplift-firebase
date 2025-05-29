@@ -358,13 +358,21 @@ export default function BusinessForm() {
 
     try {
       await createBusinessDocument(currentUser.uid, businessData);
+      
+      // Explicitly update the user document
+      const userRef = doc(db, "users", currentUser.uid);
+      await updateDoc(userRef, {
+        businessFormFilled: true,
+        updatedAt: serverTimestamp(),
+      });
+      
       toast.success(`Business details ${isUpdating ? 'updated' : 'saved'} successfully!`);
 
       setTimeout(() => {
         navigate("/components/business/dashboard");
       }, 1500);
-    } catch (error: any) {
-      console.error("Error submitting form to Firebase:", error);
+    } catch (err: any) {
+      console.error("Error submitting form to Firebase:", err);
       toast.error("There was a problem saving your business details. Please try again.");
     } finally {
       setLoading(false);

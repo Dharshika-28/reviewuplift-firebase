@@ -16,7 +16,7 @@ import {
   collection,
   getDocs,
   updateDoc,
-  doc  // Added missing import
+  doc
 } from "firebase/firestore";
 
 // Firebase configuration
@@ -81,29 +81,42 @@ export const checkBusinessFormStatus = async (uid: string) => {
   try {
     const userRef = doc(db, "users", uid);
     const userDoc = await getDoc(userRef);
-
-    if (!userDoc.exists()) {
-      await setDoc(userRef, {
-        uid,
-        role: "BUSER",
-        createdAt: serverTimestamp(),
-        businessFormFilled: false,
-        businessId: uid,
-      });
+    
+    if (userDoc.exists() && userDoc.data()?.businessFormFilled) {
       return {
-        formFilled: false,
-        businessId: uid,
+        formFilled: true,
+        businessId: userDoc.data()?.businessId || uid,
       };
     }
 
-    const userData = userDoc.data();
+    // Check if the business document exists in the subcollection
+    const businessRef = doc(db, "users", uid, "business", "main");
+    const businessSnap = await getDoc(businessRef);
+    
+    if (businessSnap.exists()) {
+      // Update the user document to mark form as filled
+      await updateDoc(userRef, {
+        businessFormFilled: true,
+        updatedAt: serverTimestamp(),
+      });
+      
+      return {
+        formFilled: true,
+        businessId: userDoc.exists() ? (userDoc.data()?.businessId || uid) : uid,
+      };
+    }
+
+    // If we get here, the business form is not filled
     return {
-      formFilled: userData.businessFormFilled || false,
-      businessId: userData.businessId || uid,
+      formFilled: false,
+      businessId: uid,
     };
   } catch (error) {
     console.error("Error checking business form status:", error);
-    throw new Error("Failed to check business form status");
+    return {
+      formFilled: false,
+      businessId: uid,
+    };
   }
 };
 
@@ -123,6 +136,7 @@ export const initializeUserDocument = async (uid: string, email?: string) => {
         businessId: uid,
       });
     }
+    // If document exists, do NOT overwrite existing data
   } catch (error) {
     console.error("Error initializing user document:", error);
     throw error;

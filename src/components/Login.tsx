@@ -21,10 +21,14 @@ export default function LoginForm() {
 
   const handleRedirect = async (uid: string) => {
     try {
+      // Initialize document first
       await initializeUserDocument(uid, email);
+      
+      // Now check status
       const { formFilled } = await checkBusinessFormStatus(uid);
       
-      navigate(formFilled ? "/dashboard" : "/businessform");
+      // Redirect based on form status
+      navigate(formFilled ? "/components/business/dashboard" : "/businessform");
     } catch (err) {
       console.error("Redirect error:", err);
       navigate("/businessform");
