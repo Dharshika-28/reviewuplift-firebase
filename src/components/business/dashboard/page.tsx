@@ -54,30 +54,31 @@ export default function BusinessDashboard() {
     ratingDistribution: [0, 0, 0, 0, 0],
   });
 
-  const navigate = useNavigate(); // ✅ Added navigate
+  const navigate = useNavigate();
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
         try {
-          // Get user document first
-          const userDoc = await getDoc(doc(db, "users", user.uid));
-          if (!userDoc.exists() || !userDoc.data().businessFormFilled) {
-            navigate("/businessform"); // ✅ Fixed redirect
+          const userRef = doc(db, "users", user.uid);
+          const userDoc = await getDoc(userRef);
+          
+          if (!userDoc.exists() || !userDoc.data()?.businessFormFilled) {
+            navigate("/businessform");
             return;
           }
 
-          // Then get business data (you can remove if unused)
-          const businessData = userDoc.data().businessInfo || {};
+          // Get business data from user document
+          const businessData = userDoc.data()?.businessInfo || {};
           setBusinessName(businessData.businessName || "");
 
-          // Get reviews
+          // Get reviews from subcollection
           const reviewsQuery = query(
             collection(db, "users", user.uid, "reviews"),
             where("status", "==", "published")
           );
+          
           const querySnapshot = await getDocs(reviewsQuery);
-
           const reviewsData: Review[] = [];
           let totalRating = 0;
           const ratingCounts = [0, 0, 0, 0, 0];
@@ -94,26 +95,25 @@ export default function BusinessDashboard() {
             });
 
             totalRating += data.rating;
+            // Fix: Correct rating distribution calculation
             ratingCounts[5 - data.rating]++;
           });
 
           const totalReviews = reviewsData.length;
-          const averageRating =
-            totalReviews > 0
-              ? (totalRating / totalReviews).toFixed(1)
-              : "0";
+          const averageRating = totalReviews > 0 ? parseFloat((totalRating / totalReviews).toFixed(1)) : 0;
 
           setReviews(
             reviewsData.sort(
               (a, b) => b.createdAt.seconds - a.createdAt.seconds
             )
           );
+          
           setStats({
             totalReviews,
-            averageRating: parseFloat(averageRating),
+            averageRating,
             linkClicks: businessData.linkClicks || 0,
             responseRate: businessData.responseRate || 0,
-            ratingDistribution: ratingCounts.reverse(),
+            ratingDistribution: ratingCounts.reverse(), // Reverse to show 5-star first
           });
         } catch (error) {
           console.error("Error fetching data:", error);
@@ -121,12 +121,12 @@ export default function BusinessDashboard() {
           setLoading(false);
         }
       } else {
-        setLoading(false);
+        navigate("/login");
       }
     });
 
     return () => unsubscribe();
-  }, []);
+  }, [navigate]);
 
   const formatDate = (seconds: number) => {
     return new Date(seconds * 1000).toLocaleDateString("en-US", {

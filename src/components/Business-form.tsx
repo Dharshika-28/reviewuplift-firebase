@@ -34,7 +34,6 @@ interface Branch {
 export default function BusinessForm() {
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
-  const [isUpdating, setIsUpdating] = useState(false);
   const navigate = useNavigate();
   const [formData, setFormData] = useState({
     businessName: "",
@@ -67,63 +66,6 @@ export default function BusinessForm() {
   const [recaptchaVerifier, setRecaptchaVerifier] = useState<RecaptchaVerifier | null>(null);
   const [confirmationResult, setConfirmationResult] = useState<any>(null);
 
-  const checkExistingData = async () => {
-    const currentUser = auth.currentUser;
-    if (!currentUser) {
-      toast.error("You must be logged in to access this page");
-      navigate("/login");
-      return;
-    }
-
-    try {
-      const userRef = doc(db, "users", currentUser.uid);
-      const userSnap = await getDoc(userRef);
-
-      if (userSnap.exists() && userSnap.data().businessInfo) {
-        const data = userSnap.data().businessInfo;
-
-        setFormData({
-          businessName: data.businessName || "",
-          location: data.location || "",
-          branch: data.branch || "",
-          contactEmail: data.contactEmail || "",
-          contactPhone: data.contactPhone || "",
-          whatsapp: data.whatsapp || "",
-          secondaryEmail: data.secondaryEmail || "",
-          facebook: data.facebook || "",
-          instagram: data.instagram || "",
-          linkedin: data.linkedin || "",
-          website: data.website || "",
-          googleReviewLink: data.googleReviewLink || "",
-          description: data.description || "",
-          businessType: data.businessType || "",
-          branchCount: data.branchCount || "1",
-          customBusinessType: data.customBusinessType || "",
-        });
-
-        if (data.branches && Array.isArray(data.branches)) {
-          setBranches(data.branches);
-        } else if (data.branch && data.location) {
-          setBranches([{ name: data.branch, location: data.location }]);
-        }
-
-        if (data.emailVerified) setEmailVerified(true);
-        if (data.phoneVerified) setPhoneVerified(true);
-
-        setIsUpdating(true);
-      } else {
-        setFormData(prev => ({
-          ...prev,
-          contactEmail: currentUser.email || "",
-          contactPhone: currentUser.phoneNumber || ""
-        }));
-      }
-    } catch (error) {
-      console.error("Error checking existing data:", error);
-      toast.error("Failed to load business data");
-    }
-  };
-
   useEffect(() => {
     const count = parseInt(formData.branchCount) || 1;
     if (count > branches.length) {
@@ -138,6 +80,7 @@ export default function BusinessForm() {
   }, [formData.branchCount]);
 
   useEffect(() => {
+    // Initialize reCAPTCHA
     if (typeof window !== 'undefined' && auth) {
       const verifier = new RecaptchaVerifier(auth, 'recaptcha-container', {
         'size': 'invisible',
@@ -150,7 +93,7 @@ export default function BusinessForm() {
   }, []);
 
   useEffect(() => {
-    const checkAuthAndData = async () => {
+    const checkAuthAndRedirect = async () => {
       const currentUser = auth.currentUser;
       if (!currentUser) {
         navigate("/login");
@@ -163,11 +106,16 @@ export default function BusinessForm() {
         return;
       }
 
-      await checkExistingData();
+      // Set initial contact info from logged-in user
+      setFormData(prev => ({
+        ...prev,
+        contactEmail: currentUser.email || "",
+        contactPhone: currentUser.phoneNumber || ""
+      }));
     };
 
-    checkAuthAndData();
-  }, []);
+    checkAuthAndRedirect();
+  }, [navigate]);
 
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
@@ -355,12 +303,12 @@ export default function BusinessForm() {
       ownerId: currentUser.uid,
       emailVerified,
       phoneVerified,
-      [isUpdating ? "updatedAt" : "createdAt"]: serverTimestamp(),
+      createdAt: serverTimestamp(),
     };
 
     try {
       await createBusinessDocument(currentUser.uid, businessData);
-      toast.success(`Business details ${isUpdating ? "updated" : "saved"} successfully!`);
+      toast.success("Business details saved successfully!");
       navigate("/components/business/dashboard");
     } catch (err: any) {
       console.error("Error submitting form to Firebase:", err);
@@ -369,27 +317,6 @@ export default function BusinessForm() {
       setLoading(false);
     }
   };
-
-  // Update checkExistingData to handle redirection
-useEffect(() => {
-  const checkAuthAndData = async () => {
-    const currentUser = auth.currentUser;
-    if (!currentUser) {
-      navigate("/login");
-      return;
-    }
-
-    const userData = await getUserData(currentUser.uid);
-    if (userData?.businessFormFilled) {
-      navigate("/components/business/dashboard");
-      return;
-    }
-
-    await checkExistingData();
-  };
-
-  checkAuthAndData();
-}, []);
 
   const animationProps = {
     initial: { opacity: 0, y: 30 },
@@ -401,7 +328,7 @@ useEffect(() => {
   return (
     <div className="max-w-4xl mx-auto p-6 mt-10 bg-white shadow-md rounded-xl border border-gray-300">
       <h2 className="text-3xl font-bold mb-6 text-center text-orange-700">
-        {isUpdating ? "Update Business Details" : "Business Details Form"}
+        Business Details Form
       </h2>
       <form onSubmit={handleSubmit} className="space-y-6">
         <AnimatePresence mode="wait">
@@ -942,7 +869,7 @@ useEffect(() => {
                   className="relative overflow-hidden bg-gradient-to-r from-orange-600 via-orange-500 to-orange-700 text-white font-semibold py-3 px-6 rounded-xl shadow-lg hover:from-orange-700 hover:to-orange-800 transition-all duration-300 ease-in-out group disabled:opacity-70 disabled:cursor-not-allowed"
                 >
                   <span className="relative z-10 group-hover:tracking-wider transition-all duration-300">
-                    {loading ? (isUpdating ? "Updating..." : "Submitting...") : (isUpdating ? "Update" : "Submit")}
+                    {loading ? "Submitting..." : "Submit"}
                   </span>
                   <span className="absolute inset-0 w-0 group-hover:w-full bg-white/10 transition-all duration-300 ease-in-out rounded-xl"></span>
                 </button>

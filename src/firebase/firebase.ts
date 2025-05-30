@@ -62,7 +62,7 @@ export const initializeUserDocument = async (
         role: "BUSER",
         createdAt: serverTimestamp(),
         businessFormFilled: false,
-        businessInfo: null,
+        businessInfo: null, // FIX: Initialize as null
       });
     }
 
@@ -101,8 +101,12 @@ export const createBusinessDocument = async (uid: string, businessData: any) => 
     await setDoc(
       userRef,
       {
-        businessFormFilled: true,
-        businessInfo: businessData,
+        businessFormFilled: true, // Ensure this is at root level
+        businessInfo: {
+          ...businessData,
+          emailVerified: auth.currentUser?.emailVerified || false,
+          phoneVerified: businessData.phoneVerified
+        },
         updatedAt: serverTimestamp(),
       },
       { merge: true }

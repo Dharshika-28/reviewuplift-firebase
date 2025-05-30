@@ -117,33 +117,37 @@ export default function AccountPage() {
     return () => unsubscribe()
   }, [])
 
- const loadBusinessData = async (userId: string) => {
-    setIsLoadingBusiness(true)
+  const loadBusinessData = async (userId: string) => {
+    setIsLoadingBusiness(true);
     try {
-      // Corrected path: users/{uid}/business/main
-      const businessDocRef = doc(db, "users", userId, "business", "main")
-      const businessDocSnap = await getDoc(businessDocRef)
+      const userDocRef = doc(db, "users", userId);
+      const userDocSnap = await getDoc(userDocRef);
       
-      if (businessDocSnap.exists()) {
-        const data = businessDocSnap.data() as BusinessData
-        setBusinessData(data)
-        setOriginalBusinessData(data)
+      if (userDocSnap.exists()) {
+        const businessInfo = userDocSnap.data().businessInfo || {};
+        setBusinessData({
+          ...businessInfo,
+          // Get verification status from auth user
+          emailVerified: auth.currentUser?.emailVerified || false,
+          phoneVerified: !!businessInfo.contactPhone // Simplified verification
+        });
+        setOriginalBusinessData(businessInfo);
       } else {
         toast({
           title: "Warning",
           description: "No business data found",
           variant: "default",
-        })
+        });
       }
     } catch (error) {
-      console.error("Error loading business data:", error)
+      console.error("Error loading business data:", error);
       toast({
         title: "Error",
         description: "Failed to load business data",
         variant: "destructive",
-      })
+      });
     } finally {
-      setIsLoadingBusiness(false)
+      setIsLoadingBusiness(false);
     }
   }
 
@@ -265,44 +269,36 @@ export default function AccountPage() {
         title: "Validation Error",
         description: "Please fill all required fields",
         variant: "destructive",
-      })
-      return
+      });
+      return;
     }
 
-    setIsSavingBusiness(true)
+    setIsSavingBusiness(true);
     
     try {
-      const user = auth.currentUser
-      if (!user) {
-        throw new Error("User not authenticated")
-      }
+      const user = auth.currentUser;
+      if (!user) throw new Error("User not authenticated");
 
-      // Corrected path: users/{uid}/business/main
-      const businessDocRef = doc(db, "users", user.uid, "business", "main")
-      await updateDoc(businessDocRef, {
-        ...businessData,
-        businessType: businessData.businessType === "Other" 
-          ? businessData.customBusinessType 
-          : businessData.businessType
-      })
+      const userDocRef = doc(db, "users", user.uid);
+      const finalBusinessType = businessData.businessType === "Other" 
+        ? businessData.customBusinessType 
+        : businessData.businessType;
+
+      await updateDoc(userDocRef, {
+        businessInfo: {
+          ...businessData,
+          businessType: finalBusinessType
+        }
+      });
       
-      setOriginalBusinessData(businessData)
-      setIsEditingBusiness(false)
-      
-      toast({
-        title: "Success",
-        description: "Business information updated successfully",
-        variant: "default",
-      })
+      setOriginalBusinessData(businessData);
+      setIsEditingBusiness(false);
+      toast.success("Business information updated successfully");
     } catch (error) {
-      console.error("Error updating business data:", error)
-      toast({
-        title: "Error",
-        description: "Failed to update business information",
-        variant: "destructive",
-      })
+      console.error("Error updating business data:", error);
+      toast.error("Failed to update business information");
     } finally {
-      setIsSavingBusiness(false)
+      setIsSavingBusiness(false);
     }
   }
 

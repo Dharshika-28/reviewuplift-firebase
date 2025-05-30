@@ -86,43 +86,38 @@ export default function LocationPage() {
   }, []);
 
   // Fetch branches from Firebase
- const fetchBranches = async (userId: string) => {
+  const fetchBranches = async (userId: string) => {
     setLoading(true);
     try {
-      // Corrected path: users/{uid}/business/main
-      const businessRef = doc(db, "users", userId, "business", "main");
-      const businessSnap = await getDoc(businessRef);
+      const userRef = doc(db, "users", userId);
+      const userSnap = await getDoc(userRef);
 
-      if (businessSnap.exists()) {
-        const businessData = businessSnap.data();
+      if (userSnap.exists()) {
+        const businessInfo = userSnap.data().businessInfo || {};
         let branchesData: Branch[] = [];
 
-        if (businessData.branches && Array.isArray(businessData.branches)) {
-          branchesData = businessData.branches.map((branch: any) => ({
+        if (businessInfo.branches?.length) {
+          branchesData = businessInfo.branches.map((branch: any) => ({
             id: branch.id || generateId(),
             name: branch.name || "",
             location: branch.location || "",
             createdAt: branch.createdAt || new Date().toISOString(),
             isActive: branch.isActive !== false,
           }));
-        } else if (businessData.branch && businessData.location) {
-          branchesData = [
-            {
-              id: "main-branch",
-              name: businessData.branch,
-              location: businessData.location,
-              createdAt:
-                businessData.createdAt?.toDate?.()?.toISOString() ||
-                new Date().toISOString(),
-              isActive: true,
-            },
-          ];
+        } else {
+          // Create main branch from business info
+          branchesData = [{
+            id: "main-branch",
+            name: businessInfo.branch || "Main Branch",
+            location: businessInfo.location || "",
+            createdAt: new Date().toISOString(),
+            isActive: true,
+          }];
         }
 
         setBranches(branchesData);
       } else {
         toast.warning("No business data found");
-        setBranches([]);
       }
     } catch (error) {
       console.error("Fetch error:", error);
@@ -147,23 +142,16 @@ export default function LocationPage() {
       return false;
     }
 
-    if (!isOnline) {
-      toast.error("No internet connection");
-      return false;
-    }
-
     try {
-      // Corrected path: users/{uid}/business/main
-      const businessRef = doc(db, "users", user.uid, "business", "main");
-      await updateDoc(businessRef, {
-        branches: updatedBranches.map((branch) => ({
+      const userRef = doc(db, "users", user.uid);
+      await updateDoc(userRef, {
+        "businessInfo.branches": updatedBranches.map(branch => ({
           id: branch.id,
           name: branch.name,
           location: branch.location,
           isActive: branch.isActive,
           createdAt: branch.createdAt,
-        })),
-        updatedAt: serverTimestamp(),
+        }))
       });
       return true;
     } catch (error) {

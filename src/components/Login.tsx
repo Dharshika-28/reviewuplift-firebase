@@ -40,13 +40,6 @@ export default function LoginForm() {
     try {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const uid = userCredential.user.uid;
-
-      const userData = await getUserData(uid);
-      if (!userData) throw new Error("User data not found");
-
-      localStorage.setItem("role", "BUSER");
-      localStorage.setItem("email", email);
-
       await handleRedirect(uid);
     } catch (err: any) {
       console.error("Email login error:", err);
@@ -67,10 +60,6 @@ export default function LoginForm() {
       const uid = auth.currentUser?.uid;
 
       if (!uid) throw new Error("User not authenticated");
-
-      localStorage.setItem("role", "BUSER");
-      localStorage.setItem("email", auth.currentUser?.email || "");
-
       await handleRedirect(uid);
     } catch (err: any) {
       console.error("Google login error:", err);
