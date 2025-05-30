@@ -1,13 +1,12 @@
-"use client"
+"use client";
 
 import React, { useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { FcGoogle } from "react-icons/fc";
-import { auth, signInWithGoogle, checkBusinessFormStatus, initializeUserDocument, db } from "../firebase/firebase";
+import { auth, signInWithGoogle, getUserData } from "../firebase/firebase";
 import { signInWithEmailAndPassword } from "firebase/auth";
-import { doc, getDoc } from "firebase/firestore";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
@@ -21,17 +20,15 @@ export default function LoginForm() {
 
   const handleRedirect = async (uid: string) => {
     try {
-      // Initialize document first
-      await initializeUserDocument(uid, email);
-      
-      // Now check status
-      const { formFilled } = await checkBusinessFormStatus(uid);
-      
-      // Redirect based on form status
-      navigate(formFilled ? "/components/business/dashboard" : "/businessform");
-    } catch (err) {
-      console.error("Redirect error:", err);
-      navigate("/businessform");
+      const userData = await getUserData(uid);
+      if (userData?.businessFormFilled) {
+        navigate("/components/business/dashboard");
+      } else {
+        navigate("/businessform");
+      }
+    } catch (error) {
+      console.error("Redirect error:", error);
+      toast.error("Failed to determine redirect path");
     }
   };
 
@@ -44,26 +41,18 @@ export default function LoginForm() {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const uid = userCredential.user.uid;
 
-      await initializeUserDocument(uid, email);
-      
-      const userRef = doc(db, "users", uid);
-      const userSnap = await getDoc(userRef);
-
-      if (userSnap.exists()) {
-        const userData = userSnap.data();
-        if (userData.role !== "BUSER") {
-          throw new Error("Access denied: only business accounts allowed");
-        }
-      }
+      const userData = await getUserData(uid);
+      if (!userData) throw new Error("User data not found");
 
       localStorage.setItem("role", "BUSER");
       localStorage.setItem("email", email);
 
       await handleRedirect(uid);
     } catch (err: any) {
-      console.error("Login error:", err);
-      setError(err.message || "Login failed. Please try again.");
-      toast.error(err.message || "Login failed. Please try again.");
+      console.error("Email login error:", err);
+      const errorMessage = err.message || "Login failed";
+      setError(errorMessage);
+      toast.error(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -76,13 +65,18 @@ export default function LoginForm() {
     try {
       await signInWithGoogle();
       const uid = auth.currentUser?.uid;
-      
+
       if (!uid) throw new Error("User not authenticated");
+
+      localStorage.setItem("role", "BUSER");
+      localStorage.setItem("email", auth.currentUser?.email || "");
+
       await handleRedirect(uid);
     } catch (err: any) {
       console.error("Google login error:", err);
-      setError(err.message || "Google sign-in failed");
-      toast.error(err.message || "Google sign-in failed");
+      const errorMessage = err.message || "Google sign-in failed";
+      setError(errorMessage);
+      toast.error(errorMessage);
     } finally {
       setLoading(false);
     }
@@ -110,6 +104,7 @@ export default function LoginForm() {
               variant="outline"
               className="w-full mb-4 border-gray-300 text-gray-700 hover:bg-orange-100"
               onClick={() => setShowEmailForm(true)}
+              disabled={loading}
             >
               Continue with Email
             </Button>

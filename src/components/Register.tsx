@@ -1,23 +1,27 @@
-"use client"
+"use client";
 
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { FcGoogle } from "react-icons/fc";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { auth, db, signInWithGoogle } from "../firebase/firebase";
 import {
-  createUserWithEmailAndPassword,
-} from "firebase/auth";
+  auth,
+  db,
+  initializeUserDocument,
+  signInWithGoogle,
+  getUserData,
+} from "../firebase/firebase";
 import {
   collection,
-  query,
-  where,
-  getDocs,
   doc,
-  setDoc,
+  getDocs,
+  query,
   serverTimestamp,
+  setDoc,
+  where,
 } from "firebase/firestore";
+import { createUserWithEmailAndPassword } from "firebase/auth";
 import { toast } from "sonner";
 
 export default function RegistrationForm() {
@@ -29,16 +33,26 @@ export default function RegistrationForm() {
   const [error, setError] = useState("");
   const navigate = useNavigate();
 
-  const checkEmailExists = async (email: string) => {
-    const q = query(collection(db, "users"), where("email", "==", email));
-    const snapshot = await getDocs(q);
-    return !snapshot.empty;
+  const checkEmailExists = async (email: string): Promise<boolean> => {
+    try {
+      const q = query(collection(db, "users"), where("email", "==", email));
+      const snapshot = await getDocs(q);
+      return !snapshot.empty;
+    } catch (err) {
+      console.error("Email check failed:", err);
+      return false;
+    }
   };
 
-  const checkUsernameExists = async (username: string) => {
-    const q = query(collection(db, "users"), where("username", "==", username));
-    const snapshot = await getDocs(q);
-    return !snapshot.empty;
+  const checkUsernameExists = async (username: string): Promise<boolean> => {
+    try {
+      const q = query(collection(db, "users"), where("username", "==", username));
+      const snapshot = await getDocs(q);
+      return !snapshot.empty;
+    } catch (err) {
+      console.error("Username check failed:", err);
+      return false;
+    }
   };
 
   const handleRegister = async (e: React.FormEvent) => {
@@ -47,6 +61,10 @@ export default function RegistrationForm() {
     setLoading(true);
 
     try {
+      if (!username || !email || !password) {
+        throw new Error("All fields are required.");
+      }
+
       const usernameTaken = await checkUsernameExists(username);
       if (usernameTaken) throw new Error("Username already exists");
 
@@ -56,15 +74,7 @@ export default function RegistrationForm() {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       const uid = userCredential.user.uid;
 
-      await setDoc(doc(db, "users", uid), {
-        uid,
-        username,
-        email,
-        role: "BUSER",
-        createdAt: serverTimestamp(),
-        businessFormFilled: false,
-        businessId: uid
-      });
+      await initializeUserDocument(uid, email, username);
 
       toast.success("Account created successfully!");
       navigate("/businessform");
@@ -82,11 +92,17 @@ export default function RegistrationForm() {
     setLoading(true);
 
     try {
-      await signInWithGoogle();
-      const uid = auth.currentUser?.uid;
-      
+      const user = await signInWithGoogle();
+      const uid = user?.uid || auth.currentUser?.uid;
       if (!uid) throw new Error("User not authenticated");
-      navigate("/businessform");
+
+      const userData = await getUserData(uid);
+
+      if (userData?.businessFormFilled) {
+        navigate("/components/business/dashboard");
+      } else {
+        navigate("/businessform");
+      }
     } catch (err: any) {
       console.error("Google registration error:", err);
       setError(err.message || "Google sign-in failed");
@@ -107,6 +123,7 @@ export default function RegistrationForm() {
           variant="outline"
           className="w-full mb-4 flex items-center justify-center gap-2 border-orange-500 text-orange-600 hover:bg-orange-100"
           onClick={handleGoogleRegister}
+          disabled={loading}
         >
           <FcGoogle size={20} /> Continue with Google
         </Button>
@@ -116,6 +133,7 @@ export default function RegistrationForm() {
             variant="outline"
             className="w-full border-gray-300 text-gray-700 hover:bg-orange-50"
             onClick={() => setShowEmailForm(true)}
+            disabled={loading}
           >
             Continue with Email
           </Button>

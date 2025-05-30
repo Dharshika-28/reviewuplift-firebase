@@ -1,4 +1,4 @@
-"use client"
+"use client";
 
 import { useState, useEffect } from "react";
 import {
@@ -17,15 +17,8 @@ import {
 } from "react-icons/fa";
 import { motion, AnimatePresence } from "framer-motion";
 import { useNavigate } from "react-router-dom";
-import { db, auth, createBusinessDocument } from "../firebase/firebase";
-import {
-  collection,
-  doc,
-  getDoc,
-  setDoc,
-  serverTimestamp,
-  updateDoc
-} from "firebase/firestore";
+import { db, auth, createBusinessDocument, getUserData } from "../firebase/firebase";
+import { doc, getDoc, serverTimestamp } from "firebase/firestore";
 import {
   verifyBeforeUpdateEmail,
   RecaptchaVerifier,
@@ -83,11 +76,12 @@ export default function BusinessForm() {
     }
 
     try {
-      const businessRef = doc(db, "users", currentUser.uid, "business", "main");
-      const businessSnap = await getDoc(businessRef);
+      const userRef = doc(db, "users", currentUser.uid);
+      const userSnap = await getDoc(userRef);
 
-      if (businessSnap.exists()) {
-        const data = businessSnap.data();
+      if (userSnap.exists() && userSnap.data().businessInfo) {
+        const data = userSnap.data().businessInfo;
+
         setFormData({
           businessName: data.businessName || "",
           location: data.location || "",
@@ -131,22 +125,7 @@ export default function BusinessForm() {
   };
 
   useEffect(() => {
-    if (typeof window !== 'undefined' && auth) {
-      const verifier = new RecaptchaVerifier(auth, 'recaptcha-container', {
-        'size': 'invisible',
-        'callback': () => { }
-      });
-      setRecaptchaVerifier(verifier);
-
-      return () => {
-        verifier.clear();
-      };
-    }
-  }, []);
-
-  useEffect(() => {
     const count = parseInt(formData.branchCount) || 1;
-
     if (count > branches.length) {
       const newBranches = [...branches];
       while (newBranches.length < count) {
@@ -157,6 +136,38 @@ export default function BusinessForm() {
       setBranches(branches.slice(0, count));
     }
   }, [formData.branchCount]);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined' && auth) {
+      const verifier = new RecaptchaVerifier(auth, 'recaptcha-container', {
+        'size': 'invisible',
+        'callback': () => { }
+      });
+      setRecaptchaVerifier(verifier);
+
+      return () => verifier.clear();
+    }
+  }, []);
+
+  useEffect(() => {
+    const checkAuthAndData = async () => {
+      const currentUser = auth.currentUser;
+      if (!currentUser) {
+        navigate("/login");
+        return;
+      }
+
+      const userData = await getUserData(currentUser.uid);
+      if (userData?.businessFormFilled) {
+        navigate("/components/business/dashboard");
+        return;
+      }
+
+      await checkExistingData();
+    };
+
+    checkAuthAndData();
+  }, []);
 
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
@@ -266,12 +277,7 @@ export default function BusinessForm() {
 
     try {
       const formattedPhone = formatPhoneNumber(formData.contactPhone);
-      const confirmation = await signInWithPhoneNumber(
-        auth,
-        formattedPhone,
-        recaptchaVerifier
-      );
-
+      const confirmation = await signInWithPhoneNumber(auth, formattedPhone, recaptchaVerifier);
       setConfirmationResult(confirmation);
       setShowOtpField(true);
       setPhoneVerificationSent(true);
@@ -306,11 +312,7 @@ export default function BusinessForm() {
 
   const formatPhoneNumber = (phone: string) => {
     const digits = phone.replace(/\D/g, '');
-
-    if (digits.length > 10 && digits.startsWith('1')) {
-      return `+${digits}`;
-    }
-
+    if (digits.length > 10 && digits.startsWith('1')) return `+${digits}`;
     return `+91${digits}`;
   };
 
@@ -347,30 +349,19 @@ export default function BusinessForm() {
     const businessData = {
       ...formData,
       businessType: formData.businessType === "Other" ? formData.customBusinessType : formData.businessType,
-      branches: branches,
+      branches,
       branch: branches[0]?.name || "",
       location: branches[0]?.location || "",
       ownerId: currentUser.uid,
-      emailVerified: emailVerified,
-      phoneVerified: phoneVerified,
-      [isUpdating ? 'updatedAt' : 'createdAt']: serverTimestamp(),
+      emailVerified,
+      phoneVerified,
+      [isUpdating ? "updatedAt" : "createdAt"]: serverTimestamp(),
     };
 
     try {
       await createBusinessDocument(currentUser.uid, businessData);
-      
-      // Explicitly update the user document
-      const userRef = doc(db, "users", currentUser.uid);
-      await updateDoc(userRef, {
-        businessFormFilled: true,
-        updatedAt: serverTimestamp(),
-      });
-      
-      toast.success(`Business details ${isUpdating ? 'updated' : 'saved'} successfully!`);
-
-      setTimeout(() => {
-        navigate("/components/business/dashboard");
-      }, 1500);
+      toast.success(`Business details ${isUpdating ? "updated" : "saved"} successfully!`);
+      navigate("/components/business/dashboard");
     } catch (err: any) {
       console.error("Error submitting form to Firebase:", err);
       toast.error("There was a problem saving your business details. Please try again.");
@@ -378,6 +369,27 @@ export default function BusinessForm() {
       setLoading(false);
     }
   };
+
+  // Update checkExistingData to handle redirection
+useEffect(() => {
+  const checkAuthAndData = async () => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) {
+      navigate("/login");
+      return;
+    }
+
+    const userData = await getUserData(currentUser.uid);
+    if (userData?.businessFormFilled) {
+      navigate("/components/business/dashboard");
+      return;
+    }
+
+    await checkExistingData();
+  };
+
+  checkAuthAndData();
+}, []);
 
   const animationProps = {
     initial: { opacity: 0, y: 30 },

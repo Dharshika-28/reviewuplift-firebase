@@ -11,12 +11,7 @@ import {
   setDoc,
   getDoc,
   serverTimestamp,
-  query,
-  where,
-  collection,
-  getDocs,
-  updateDoc,
-  doc
+  doc,
 } from "firebase/firestore";
 
 // Firebase configuration
@@ -34,41 +29,14 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app);
-
 const provider = new GoogleAuthProvider();
 
-// Sign in with Google and set up user document
+// Google Sign-In
 export const signInWithGoogle = async () => {
   try {
     const result = await signInWithPopup(auth, provider);
     const user = result.user;
-
-    // Check for duplicate emails
-    const q = query(collection(db, "users"), where("email", "==", user.email));
-    const querySnapshot = await getDocs(q);
-    
-    if (!querySnapshot.empty) {
-      const existingUserDoc = querySnapshot.docs[0];
-      if (existingUserDoc.id !== user.uid) {
-        throw new Error("Email already exists. Please log in using your existing account.");
-      }
-    }
-
-    // Create user document if not present
-    const userRef = doc(db, "users", user.uid);
-    const userSnap = await getDoc(userRef);
-    if (!userSnap.exists()) {
-      await setDoc(userRef, {
-        uid: user.uid,
-        email: user.email,
-        displayName: user.displayName || "",
-        role: "BUSER",
-        createdAt: serverTimestamp(),
-        businessFormFilled: false,
-        businessId: user.uid,
-      });
-    }
-
+    await initializeUserDocument(user.uid, user.email, user.displayName);
     return user;
   } catch (error) {
     console.error("Google sign-in error:", error);
@@ -76,52 +44,12 @@ export const signInWithGoogle = async () => {
   }
 };
 
-// Check if business form is filled
-export const checkBusinessFormStatus = async (uid: string) => {
-  try {
-    const userRef = doc(db, "users", uid);
-    const userDoc = await getDoc(userRef);
-    
-    if (userDoc.exists() && userDoc.data()?.businessFormFilled) {
-      return {
-        formFilled: true,
-        businessId: userDoc.data()?.businessId || uid,
-      };
-    }
-
-    // Check if the business document exists in the subcollection
-    const businessRef = doc(db, "users", uid, "business", "main");
-    const businessSnap = await getDoc(businessRef);
-    
-    if (businessSnap.exists()) {
-      // Update the user document to mark form as filled
-      await updateDoc(userRef, {
-        businessFormFilled: true,
-        updatedAt: serverTimestamp(),
-      });
-      
-      return {
-        formFilled: true,
-        businessId: userDoc.exists() ? (userDoc.data()?.businessId || uid) : uid,
-      };
-    }
-
-    // If we get here, the business form is not filled
-    return {
-      formFilled: false,
-      businessId: uid,
-    };
-  } catch (error) {
-    console.error("Error checking business form status:", error);
-    return {
-      formFilled: false,
-      businessId: uid,
-    };
-  }
-};
-
-// Create user document (used during registration or login)
-export const initializeUserDocument = async (uid: string, email?: string) => {
+// Create/initialize user document
+export const initializeUserDocument = async (
+  uid: string,
+  email?: string | null,
+  displayName?: string | null
+) => {
   try {
     const userRef = doc(db, "users", uid);
     const userSnap = await getDoc(userRef);
@@ -130,78 +58,72 @@ export const initializeUserDocument = async (uid: string, email?: string) => {
       await setDoc(userRef, {
         uid,
         email: email || "",
+        displayName: displayName || "",
         role: "BUSER",
         createdAt: serverTimestamp(),
         businessFormFilled: false,
-        businessId: uid,
+        businessInfo: null,
       });
     }
-    // If document exists, do NOT overwrite existing data
+
+    return userSnap;
   } catch (error) {
     console.error("Error initializing user document:", error);
     throw error;
   }
 };
 
-// Save business form under /users/{uid}/business/main
-export const createBusinessDocument = async (uid: string, businessData: any) => {
+// Check business form status
+export const checkBusinessFormStatus = async (uid: string) => {
   try {
     const userRef = doc(db, "users", uid);
     const userSnap = await getDoc(userRef);
 
-    // Update or create user document
-    if (userSnap.exists()) {
-      await updateDoc(userRef, {
-        businessFormFilled: true,
-        updatedAt: serverTimestamp(),
-      });
-    } else {
-      await setDoc(userRef, {
-        uid,
-        role: "BUSER",
-        createdAt: serverTimestamp(),
-        businessFormFilled: true,
-        businessId: uid,
-        updatedAt: serverTimestamp(),
-      });
+    if (!userSnap.exists()) {
+      return { formFilled: false, businessData: null };
     }
 
-    // Save to business subcollection
-    const businessRef = doc(db, "users", uid, "business", "main");
-    await setDoc(businessRef, {
-      ...businessData,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    });
-
-    console.log("✅ Business form saved under /users/{uid}/business/main");
+    const userData = userSnap.data();
+    return {
+      formFilled: userData.businessFormFilled || false,
+      businessData: userData.businessInfo || null,
+    };
   } catch (error) {
-    console.error("❌ Error saving business form:", error);
-    throw error;
+    console.error("Error checking business form status:", error);
+    return { formFilled: false, businessData: null };
   }
 };
 
-// Get business data from subcollection
-export const getBusinessInfo = async (uid: string) => {
+// Save business information
+export const createBusinessDocument = async (uid: string, businessData: any) => {
   try {
-    const businessRef = doc(db, "users", uid, "business", "main");
-    const businessSnap = await getDoc(businessRef);
+    const userRef = doc(db, "users", uid);
+    await setDoc(
+      userRef,
+      {
+        businessFormFilled: true,
+        businessInfo: businessData,
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true }
+    );
 
-    if (!businessSnap.exists()) {
-      return null; // Return null instead of throwing error
-    }
-
-    return businessSnap.data();
+    console.log("✅ Business data saved to user document");
+    return businessData;
   } catch (error) {
-    console.error("Error fetching business info:", error);
+    console.error("❌ Error saving business data:", error);
     throw error;
   }
 };
 
-// Email/password authentication functions
+// Email/password sign-up
 export const emailSignUp = async (email: string, password: string) => {
   try {
-    const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+    const userCredential = await createUserWithEmailAndPassword(
+      auth,
+      email,
+      password
+    );
     await initializeUserDocument(userCredential.user.uid, email);
     return userCredential.user;
   } catch (error) {
@@ -210,12 +132,24 @@ export const emailSignUp = async (email: string, password: string) => {
   }
 };
 
+// Email/password sign-in
 export const emailSignIn = async (email: string, password: string) => {
   try {
-    const userCredential = await signInWithEmailAndPassword(auth, email, password);
-    return userCredential.user;
+    return await signInWithEmailAndPassword(auth, email, password);
   } catch (error) {
     console.error("Email sign-in error:", error);
     throw error;
+  }
+};
+
+// Get complete user data
+export const getUserData = async (uid: string) => {
+  try {
+    const userRef = doc(db, "users", uid);
+    const userSnap = await getDoc(userRef);
+    return userSnap.exists() ? userSnap.data() : null;
+  } catch (error) {
+    console.error("Error fetching user data:", error);
+    return null;
   }
 };

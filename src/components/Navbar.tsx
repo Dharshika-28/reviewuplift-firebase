@@ -51,9 +51,9 @@ const Navbar = () => {
                 Get Started Free
               </Button>
             </Link>
-            <Link to="/admin">
+            <Link to="/components/business/dashboard">
               <Button className="bg-orange-600 hover:bg-orange-700">
-                Admin
+                Dashboard
               </Button>
             </Link>
           </div>
