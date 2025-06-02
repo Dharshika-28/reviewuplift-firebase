@@ -17,7 +17,8 @@ const defaultState = {
   isReviewGatingEnabled: true,
   rating: 0,
   welcomeTitle: "We value your opinion!",
-  welcomeText: "Share your dining experience and help us serve you better"
+  welcomeText: "Share your dining experience and help us serve you better",
+  businessId: "" 
 }
 
 // Decode state from URL hash
@@ -85,22 +86,35 @@ export default function ReviewPage() {
 
   // Initialize state from persisted data
   useEffect(() => {
-    const loadInitialState = async () => {
-      const persistedState = getPersistedState()
-      setState(persistedState)
+  const loadInitialState = async () => {
+    const persistedState = getPersistedState();
+    setState(persistedState);
 
-      // Get business ID from Firebase auth
-      const currentUser = auth.currentUser
-      if (currentUser) {
-        try {
-          setBusinessId(currentUser.uid)
-        } catch (error) {
-          console.error("Error getting business ID:", error)
+    // Fetch business data from Firestore
+    if (persistedState.businessId) {
+      try {
+        const businessDoc = await getDoc(doc(db, "businesses", persistedState.businessId));
+        if (businessDoc.exists()) {
+          const businessData = businessDoc.data();
+          setState(prev => ({
+            ...prev,
+            businessName: businessData.businessName || prev.businessName,
+            previewText: businessData.previewText || prev.previewText,
+            previewImage: businessData.previewImage || prev.previewImage,
+            logoImage: businessData.logoImage || prev.logoImage,
+            reviewLinkUrl: businessData.reviewLinkUrl || prev.reviewLinkUrl,
+            isReviewGatingEnabled: businessData.isReviewGatingEnabled ?? prev.isReviewGatingEnabled,
+            welcomeTitle: businessData.welcomeTitle || prev.welcomeTitle,
+            welcomeText: businessData.welcomeText || prev.welcomeText
+          }));
         }
+      } catch (error) {
+        console.error("Error fetching business data:", error);
       }
     }
+  }
 
-    loadInitialState()
+  loadInitialState();
 
     // Listen for hash changes to sync with editor
     const handleHashChange = () => {

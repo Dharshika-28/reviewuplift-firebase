@@ -17,16 +17,13 @@ import ContactWidget from "./components/ContactWidget";
 import BusinessDashboard from "./components/business/dashboard/page";
 import BusinessReviews from "./components/business/reviews/page";
 import ReviewLinkPage from "./components/business/review-link/page";
-import AdminDashboard from "./components/admin/dashboard/page";
-import BusinessesPage from "./components/admin/businesses/page";
-import UsersPage from "./components/admin/users/page";
 import Sidebar from "./components/sidebar";
 import BusinessForm from "./components/Business-form";
 import AccountPage from "./components/business/settings/account";
 import BusinessUsersPage from "./components/business/settings/businessusers";
 import LocationPage from "./components/business/settings/location";
 
-import FeedbackForm from "./components/business/review-link/form";
+// import FeedbackForm from "./components/business/review-link/form";
 import ReviewPage from "./components/business/review-link/review";
 
 // Custom hook to scroll to hash section on route change
@@ -74,9 +71,6 @@ function AppRoutes() {
         <Route path="/components/business/settings/account" element={<AccountPage />} />
         <Route path="/components/business/settings/businessusers" element={<BusinessUsersPage />} />
         <Route path="/components/business/settings/location" element={<LocationPage />} />
-        <Route path="/components/admin/dashboard" element={<AdminDashboard />} />
-        <Route path="/components/admin/businesses" element={<BusinessesPage />} />
-        <Route path="/components/admin/users" element={<UsersPage />} />
         <Route path="/sidebar" element={<Sidebar />} />
         <Route path="/review" element={<ReviewPage />} />
         <Route path="*" element={<NotFound />} />

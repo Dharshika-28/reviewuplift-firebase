@@ -39,25 +39,15 @@ export default function Sidebar({ isAdmin = false }: SidebarProps) {
     { name: "Dashboard", href: "/components/admin/dashboard", icon: BarChart3 },
     { name: "Businesses", href: "/components/admin/businesses", icon: Building },
     { name: "Users", href: "/components/admin/users", icon: Users },
-    // { 
-    //   name: "Settings", 
-    //   href: "/components/admin/settings", 
-    //   icon: Settings,
-    //   subLinks: [
-    //     { name: "Account", href: "/components/admin/settings/account", icon: User },
-    //     { name: "Locations", href: "/components/admin/settings/locations", icon: MapPin },
-    //     { name: "Business Users", href: "/components/admin/settings/business-users", icon: Users }
-    //   ]
-    // },
   ]
 
   const businessLinks = [
     { name: "Dashboard", href: "/components/business/dashboard", icon: BarChart3 },
     { name: "Reviews", href: "/components/business/reviews", icon: Star },
     { name: "Review Link", href: "/components/business/review-link", icon: LinkIcon },
-    { 
-      name: "Settings", 
-      href: "/components/business/settings", 
+    {
+      name: "Settings",
+      href: "/components/business/settings",
       icon: Settings,
       subLinks: [
         { name: "Account", href: "/components/business/settings/account", icon: User },
@@ -73,66 +63,62 @@ export default function Sidebar({ isAdmin = false }: SidebarProps) {
     window.location.href = "/login"
   }
 
-  const isSettingsActive = (pathname: string) => {
-    return pathname.includes("/settings")
-  }
+  const isSettingsActive = (pathname: string) => pathname.includes("/settings")
 
   const SidebarContent = () => (
     <div className="h-full flex flex-col pt-12 bg-orange-50 text-orange-900 shadow-md rounded-r-xl overflow-hidden animate-fade-in">
-      
       <div className="flex-1 px-5 py-6 overflow-y-auto">
-        <nav
-          className="space-y-2"
-          aria-label={isAdmin ? "Admin navigation" : "Business navigation"}
-        >
+        <nav className="space-y-2" aria-label={isAdmin ? "Admin navigation" : "Business navigation"}>
           {links.map((link, index) => {
             const isActive = pathname === link.href || (link.name === "Settings" && isSettingsActive(pathname))
-            const hasSubLinks = link.subLinks && link.subLinks.length > 0
+            const hasSubLinks = !!link.subLinks
 
             return (
               <div key={link.name} className="space-y-1">
-                <div
-                  className={cn(
-                    "group flex items-center justify-between rounded-lg px-4 py-3 text-base font-medium transition-all duration-300 ease-in-out transform",
-                    isActive
-                      ? "bg-orange-500 text-white shadow-md"
-                      : "hover:bg-orange-100 hover:text-orange-800 hover:translate-x-1"
-                  )}
-                  onClick={() => {
-                    if (hasSubLinks) {
-                      setSettingsOpen(!settingsOpen)
-                    } else {
-                      setOpen(false)
-                    }
-                  }}
-                  style={{ animationDelay: `${index * 50}ms` }}
-                >
-                  <div className="flex items-center gap-4">
-                    <link.icon className="h-5 w-5 transition-transform duration-300 group-hover:scale-110" />
-                    <Link
-                      to={link.href}
-                      className="transition-opacity duration-300"
-                      onClick={(e) => {
-                        if (hasSubLinks) {
-                          e.preventDefault()
-                        }
-                      }}
-                    >
+                {!hasSubLinks ? (
+                  <Link
+                    to={link.href}
+                    className={cn(
+                      "group flex items-center justify-between rounded-lg px-4 py-3 text-base font-medium transition-all duration-300 ease-in-out transform",
+                      isActive
+                        ? "bg-orange-500 text-white shadow-md"
+                        : "hover:bg-orange-100 hover:text-orange-800 hover:translate-x-1"
+                    )}
+                    style={{ animationDelay: `${index * 50}ms` }}
+                    onClick={() => setOpen(false)}
+                  >
+                    <div className="flex items-center gap-4">
+                      <link.icon className="h-5 w-5 transition-transform duration-300 group-hover:scale-110" />
                       {link.name}
-                    </Link>
-                  </div>
-                  {hasSubLinks && (
-                    settingsOpen ? (
+                    </div>
+                  </Link>
+                ) : (
+                  <button
+                    type="button"
+                    className={cn(
+                      "group w-full flex items-center justify-between rounded-lg px-4 py-3 text-base font-medium transition-all duration-300 ease-in-out transform",
+                      isActive
+                        ? "bg-orange-500 text-white shadow-md"
+                        : "hover:bg-orange-100 hover:text-orange-800 hover:translate-x-1"
+                    )}
+                    onClick={() => setSettingsOpen(!settingsOpen)}
+                    style={{ animationDelay: `${index * 50}ms` }}
+                  >
+                    <div className="flex items-center gap-4">
+                      <link.icon className="h-5 w-5 transition-transform duration-300 group-hover:scale-110" />
+                      {link.name}
+                    </div>
+                    {settingsOpen ? (
                       <ChevronUp className="h-4 w-4 transition-transform duration-200" />
                     ) : (
                       <ChevronDown className="h-4 w-4 transition-transform duration-200" />
-                    )
-                  )}
-                </div>
+                    )}
+                  </button>
+                )}
 
                 {hasSubLinks && settingsOpen && (
                   <div className="ml-8 mt-1 space-y-1">
-                    {link.subLinks?.map((subLink, subIndex) => {
+                    {link.subLinks.map((subLink, subIndex) => {
                       const isSubActive = pathname === subLink.href
                       return (
                         <Link
