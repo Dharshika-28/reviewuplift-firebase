@@ -23,16 +23,22 @@ import {
   FaSpinner,
   FaEdit,
   FaSave,
-  FaTimes
+  FaTimes,
+  FaPlus,
+  FaTrash,
+  FaGoogle
 } from "react-icons/fa"
 import { auth, db } from "@/firebase/firebase"
 import { doc, getDoc, updateDoc } from "firebase/firestore"
 import { onAuthStateChanged, updatePassword, EmailAuthProvider, reauthenticateWithCredential } from "firebase/auth"
 
+interface Branch {
+  name: string;
+  location: string;
+}
+
 interface BusinessData {
   businessName: string
-  location: string
-  branch: string
   contactEmail: string
   contactPhone: string
   whatsapp: string
@@ -47,6 +53,8 @@ interface BusinessData {
   customBusinessType: string
   emailVerified: boolean
   phoneVerified: boolean
+  branches: Branch[]  // Changed to array of Branch objects
+  googleReviewLink: string
 }
 
 export default function AccountPage() {
@@ -67,8 +75,6 @@ export default function AccountPage() {
   
   const [businessData, setBusinessData] = useState<BusinessData>({
     businessName: "",
-    location: "",
-    branch: "",
     contactEmail: "",
     contactPhone: "",
     whatsapp: "",
@@ -82,13 +88,13 @@ export default function AccountPage() {
     branchCount: "",
     customBusinessType: "",
     emailVerified: false,
-    phoneVerified: false
+    phoneVerified: false,
+    branches: [],  // Initialize as empty array
+    googleReviewLink: ""
   })
 
   const [originalBusinessData, setOriginalBusinessData] = useState<BusinessData>({
     businessName: "",
-    location: "",
-    branch: "",
     contactEmail: "",
     contactPhone: "",
     whatsapp: "",
@@ -102,7 +108,9 @@ export default function AccountPage() {
     branchCount: "",
     customBusinessType: "",
     emailVerified: false,
-    phoneVerified: false
+    phoneVerified: false,
+    branches: [],  // Initialize as empty array
+    googleReviewLink: ""
   })
 
   // Load business data on component mount
@@ -127,11 +135,16 @@ export default function AccountPage() {
         const businessInfo = userDocSnap.data().businessInfo || {};
         setBusinessData({
           ...businessInfo,
-          // Get verification status from auth user
+          branches: businessInfo.branches || [],  // Ensure branches array exists
           emailVerified: auth.currentUser?.emailVerified || false,
-          phoneVerified: !!businessInfo.contactPhone // Simplified verification
+          phoneVerified: !!businessInfo.contactPhone
         });
-        setOriginalBusinessData(businessInfo);
+        setOriginalBusinessData({
+          ...businessInfo,
+          branches: businessInfo.branches || [],
+          emailVerified: auth.currentUser?.emailVerified || false,
+          phoneVerified: !!businessInfo.contactPhone
+        });
       } else {
         toast({
           title: "Warning",
@@ -287,16 +300,25 @@ export default function AccountPage() {
       await updateDoc(userDocRef, {
         businessInfo: {
           ...businessData,
-          businessType: finalBusinessType
+          businessType: finalBusinessType,
+          branches: businessData.branches  // Ensure branches are saved
         }
       });
       
       setOriginalBusinessData(businessData);
       setIsEditingBusiness(false);
-      toast.success("Business information updated successfully");
+      toast({
+        title: "Success",
+        description: "Business information updated successfully",
+        variant: "default",
+      });
     } catch (error) {
       console.error("Error updating business data:", error);
-      toast.error("Failed to update business information");
+      toast({
+        title: "Error",
+        description: "Failed to update business information",
+        variant: "destructive",
+      });
     } finally {
       setIsSavingBusiness(false);
     }
@@ -309,11 +331,33 @@ export default function AccountPage() {
 
   const validateBusinessData = () => {
     return businessData.businessName.trim() && 
-           businessData.location.trim() && 
            businessData.contactEmail.trim() && 
            businessData.contactPhone.trim() &&
-           businessData.businessType.trim()
+           businessData.businessType.trim() &&
+           businessData.branches.every(branch => branch.name.trim() && branch.location.trim())
   }
+
+  // Handle branch changes
+  const handleBranchChange = (index: number, field: keyof Branch, value: string) => {
+    const newBranches = [...businessData.branches];
+    newBranches[index] = { ...newBranches[index], [field]: value };
+    setBusinessData({ ...businessData, branches: newBranches });
+  };
+
+  // Add a new branch
+  const addBranch = () => {
+    setBusinessData({
+      ...businessData,
+      branches: [...businessData.branches, { name: "", location: "" }]
+    });
+  };
+
+  // Remove a branch
+  const removeBranch = (index: number) => {
+    const newBranches = [...businessData.branches];
+    newBranches.splice(index, 1);
+    setBusinessData({ ...businessData, branches: newBranches });
+  };
 
   if (isLoadingBusiness) {
     return (
@@ -418,30 +462,6 @@ export default function AccountPage() {
                     )}
                   </div>
                   <div className="space-y-2">
-                    <Label>Location *</Label>
-                    {isEditingBusiness ? (
-                      <Input
-                        value={businessData.location}
-                        onChange={(e) => handleBusinessChange('location', e.target.value)}
-                        placeholder="City, State"
-                      />
-                    ) : (
-                      <p className="text-sm p-2 border rounded-md bg-gray-50">{businessData.location || "Not provided"}</p>
-                    )}
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Branch Name</Label>
-                    {isEditingBusiness ? (
-                      <Input
-                        value={businessData.branch}
-                        onChange={(e) => handleBusinessChange('branch', e.target.value)}
-                        placeholder="Branch name"
-                      />
-                    ) : (
-                      <p className="text-sm p-2 border rounded-md bg-gray-50">{businessData.branch || "Not provided"}</p>
-                    )}
-                  </div>
-                  <div className="space-y-2">
                     <Label>Business Type *</Label>
                     {isEditingBusiness ? (
                       <Select 
@@ -487,9 +507,11 @@ export default function AccountPage() {
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="1">1</SelectItem>
-                          <SelectItem value="2-5">2-5</SelectItem>
-                          <SelectItem value="6-10">6-10</SelectItem>
-                          <SelectItem value="11+">11+</SelectItem>
+                          <SelectItem value="2">2</SelectItem>
+                          <SelectItem value="3">3</SelectItem>
+                          <SelectItem value="4">4</SelectItem>
+                          <SelectItem value="5">5</SelectItem>
+                          <SelectItem value="6+">6+</SelectItem>
                         </SelectContent>
                       </Select>
                     ) : (
@@ -497,6 +519,73 @@ export default function AccountPage() {
                     )}
                   </div>
                 </div>
+              </div>
+
+              {/* Branch Details */}
+              <div className="space-y-4">
+                <h4 className="font-semibold text-gray-800 flex items-center">
+                  <FaMapMarkerAlt className="mr-2" />
+                  Branch Details
+                </h4>
+                
+                {businessData.branches.length === 0 && !isEditingBusiness && (
+                  <p className="text-sm p-2 border rounded-md bg-gray-50">No branches provided</p>
+                )}
+                
+                {businessData.branches.map((branch, index) => (
+                  <div key={index} className="p-4 border rounded-lg bg-gray-50 space-y-3">
+                    <div className="flex justify-between items-center">
+                      <h5 className="font-medium">Branch {index + 1}</h5>
+                      {isEditingBusiness && (
+                        <Button 
+                          variant="destructive" 
+                          size="sm"
+                          onClick={() => removeBranch(index)}
+                        >
+                          <FaTrash className="w-4 h-4" />
+                        </Button>
+                      )}
+                    </div>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label>Branch Name *</Label>
+                        {isEditingBusiness ? (
+                          <Input
+                            value={branch.name}
+                            onChange={(e) => handleBranchChange(index, 'name', e.target.value)}
+                            placeholder={`Branch ${index + 1} Name`}
+                          />
+                        ) : (
+                          <p className="text-sm p-2 border rounded-md bg-white">{branch.name || "Not provided"}</p>
+                        )}
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Location *</Label>
+                        {isEditingBusiness ? (
+                          <Input
+                            value={branch.location}
+                            onChange={(e) => handleBranchChange(index, 'location', e.target.value)}
+                            placeholder={`Branch ${index + 1} Location`}
+                          />
+                        ) : (
+                          <p className="text-sm p-2 border rounded-md bg-white">{branch.location || "Not provided"}</p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                
+                {isEditingBusiness && (
+                  <Button 
+                    variant="outline" 
+                    className="mt-2"
+                    onClick={addBranch}
+                  >
+                    <FaPlus className="mr-2" />
+                    Add Branch
+                  </Button>
+                )}
               </div>
 
               {/* Contact Information */}
@@ -582,6 +671,22 @@ export default function AccountPage() {
                   Online Presence
                 </h4>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label className="flex items-center gap-2">
+                      <FaGoogle className="text-blue-600" />
+                      Google Review Link
+                    </Label>
+                    {isEditingBusiness ? (
+                      <Input
+                        type="url"
+                        value={businessData.googleReviewLink}
+                        onChange={(e) => handleBusinessChange('googleReviewLink', e.target.value)}
+                        placeholder="https://g.page/r/Cd.../review"
+                      />
+                    ) : (
+                      <p className="text-sm p-2 border rounded-md bg-gray-50 break-all">{businessData.googleReviewLink || "Not provided"}</p>
+                    )}
+                  </div>
                   <div className="space-y-2">
                     <Label className="flex items-center gap-2">
                       <FaFacebook className="text-blue-600" />

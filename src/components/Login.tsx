@@ -1,14 +1,12 @@
-"use client";
-
-import React, { useState } from "react";
+// src/components/LoginForm.tsx
+import React, { useState, useEffect } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { FcGoogle } from "react-icons/fc";
-import { auth, signInWithGoogle, getUserData } from "../firebase/firebase";
+import { auth, db, signInWithGoogle } from "../firebase/firebase";
 import { signInWithEmailAndPassword } from "firebase/auth";
-import { useNavigate } from "react-router-dom";
-import { toast } from "sonner";
+import { doc, getDoc } from "firebase/firestore";
 
 export default function LoginForm() {
   const [showEmailForm, setShowEmailForm] = useState(false);
@@ -16,22 +14,42 @@ export default function LoginForm() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const navigate = useNavigate();
 
-  const handleRedirect = async (uid: string) => {
-    try {
-      const userData = await getUserData(uid);
-      if (userData?.businessFormFilled) {
-        navigate("/components/business/dashboard");
+  // As soon as this component mounts, clear any previously stored "uid".
+  // That way, even if the user clicked "Logout" elsewhere and got sent back here,
+  // we make sure no old uid remains in localStorage.
+  useEffect(() => {
+    localStorage.removeItem("uid");
+  }, []);
+
+  /**
+   * After a successful login, we check if the user has already filled out their business form.
+   * If so, redirect to "/components/business/dashboard".
+   * Otherwise, redirect to "/businessform".
+   */
+  const redirectBasedOnFormStatus = async (uid: string) => {
+    const businessRef = doc(db, "users", uid);
+    const businessSnap = await getDoc(businessRef);
+
+    if (businessSnap.exists()) {
+      const businessData = businessSnap.data();
+      if (businessData.businessFormFilled === true) {
+        window.location.href = "/components/business/dashboard";
       } else {
-        navigate("/businessform");
+        window.location.href = "/businessform";
       }
-    } catch (error) {
-      console.error("Redirect error:", error);
-      toast.error("Failed to determine redirect path");
+    } else {
+      window.location.href = "/businessform";
     }
   };
 
+  /**
+   * Handle Email/Password login.
+   * - Sign in via Firebase Auth
+   * - Verify that the user's role === "BUSER"
+   * - Store role, email, AND uid in localStorage
+   * - Then redirect appropriately
+   */
   const handleEmailLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -40,32 +58,76 @@ export default function LoginForm() {
     try {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const uid = userCredential.user.uid;
-      await handleRedirect(uid);
+
+      // Fetch the "users/{uid}" document from Firestore
+      const userRef = doc(db, "users", uid);
+      const userSnap = await getDoc(userRef);
+
+      if (!userSnap.exists()) {
+        throw new Error("User data not found.");
+      }
+
+      const userData = userSnap.data();
+
+      // Only allow role === "BUSER"
+      if (userData.role !== "BUSER") {
+        throw new Error("Access denied: only BUSER role allowed");
+      }
+
+      // Store role, email, and uid in localStorage
+      localStorage.setItem("role", userData.role);
+      localStorage.setItem("email", userData.email);
+      localStorage.setItem("uid", uid);
+
+      // Redirect based on whether businessFormFilled is true/false
+      await redirectBasedOnFormStatus(uid);
     } catch (err: any) {
-      console.error("Email login error:", err);
-      const errorMessage = err.message || "Login failed";
-      setError(errorMessage);
-      toast.error(errorMessage);
+      setError(err.message || "Login failed.");
     } finally {
       setLoading(false);
     }
   };
 
+  /**
+   * Handle Google Sign‐In.
+   * - Use your existing signInWithGoogle() helper that calls Firebase Auth.
+   * - After sign‐in, get currentUser.uid, verify role in Firestore.
+   * - If role !== "BUSER", error out.
+   * - Otherwise, store role, email, AND uid in localStorage, then redirect.
+   */
   const handleGoogleLogin = async () => {
     setLoading(true);
     setError("");
 
     try {
       await signInWithGoogle();
-      const uid = auth.currentUser?.uid;
 
+      const currentUser = auth.currentUser;
+      const uid = currentUser?.uid;
       if (!uid) throw new Error("User not authenticated");
-      await handleRedirect(uid);
+
+      // Fetch the "users/{uid}" document from Firestore
+      const userRef = doc(db, "users", uid);
+      const userSnap = await getDoc(userRef);
+
+      if (!userSnap.exists()) {
+        throw new Error("User data not found.");
+      }
+
+      const userData = userSnap.data();
+      if (userData.role !== "BUSER") {
+        throw new Error("Access denied: only BUSER role allowed");
+      }
+
+      // Store role, email, and uid in localStorage
+      localStorage.setItem("role", userData.role);
+      localStorage.setItem("email", userData.email || "");
+      localStorage.setItem("uid", uid);
+
+      // Redirect based on whether businessFormFilled is true/false
+      await redirectBasedOnFormStatus(uid);
     } catch (err: any) {
-      console.error("Google login error:", err);
-      const errorMessage = err.message || "Google sign-in failed";
-      setError(errorMessage);
-      toast.error(errorMessage);
+      setError(err.message || "Google sign-in failed");
     } finally {
       setLoading(false);
     }
@@ -93,7 +155,6 @@ export default function LoginForm() {
               variant="outline"
               className="w-full mb-4 border-gray-300 text-gray-700 hover:bg-orange-100"
               onClick={() => setShowEmailForm(true)}
-              disabled={loading}
             >
               Continue with Email
             </Button>
@@ -142,7 +203,7 @@ export default function LoginForm() {
           )}
 
           <p className="mt-6 text-sm text-center text-gray-600">
-            Don't have an account?{" "}
+            Don’t have an account?{" "}
             <a href="/register" className="text-orange-600 font-medium hover:underline">
               Register here
             </a>

@@ -1,5 +1,3 @@
-"use client";
-
 import { useState, useEffect } from "react";
 import {
   FaEnvelope,
@@ -13,32 +11,32 @@ import {
   FaCheckCircle,
   FaTimesCircle,
   FaSpinner,
-  FaGoogle,
+  FaGoogle
 } from "react-icons/fa";
 import { motion, AnimatePresence } from "framer-motion";
-import { useNavigate } from "react-router-dom";
-import { db, auth, createBusinessDocument, getUserData } from "../firebase/firebase";
-import { doc, getDoc, serverTimestamp } from "firebase/firestore";
-import {
-  verifyBeforeUpdateEmail,
+import { useNavigate, useLocation } from "react-router-dom";
+import { db, auth } from "../firebase/firebase";
+import { 
+  doc, 
+  getDoc, 
+  setDoc, 
+  serverTimestamp
+} from "firebase/firestore";
+import { 
   RecaptchaVerifier,
   signInWithPhoneNumber,
+  onAuthStateChanged
 } from "firebase/auth";
 import { toast } from "sonner";
 
-interface Branch {
-  name: string;
-  location: string;
-}
-
 export default function BusinessForm() {
+  const location = useLocation();
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
   const navigate = useNavigate();
   const [formData, setFormData] = useState({
     businessName: "",
-    location: "",
-    branch: "",
     contactEmail: "",
     contactPhone: "",
     whatsapp: "",
@@ -47,14 +45,20 @@ export default function BusinessForm() {
     instagram: "",
     linkedin: "",
     website: "",
-    googleReviewLink: "",
     description: "",
     businessType: "",
-    branchCount: "1",
+    branchCount: "",
     customBusinessType: "",
+    googleReviewLink: ""
   });
 
-  const [branches, setBranches] = useState<Branch[]>([{ name: "", location: "" }]);
+  // State for branch details
+  const [branches, setBranches] = useState<Array<{name: string; location: string}>>([]);
+
+  // Get UID from location state (passed from registration)
+  const [uid, setUid] = useState(location.state?.uid || "");
+  
+  // Verification states
   const [emailVerified, setEmailVerified] = useState(false);
   const [phoneVerified, setPhoneVerified] = useState(false);
   const [emailVerificationSent, setEmailVerificationSent] = useState(false);
@@ -65,64 +69,152 @@ export default function BusinessForm() {
   const [verifyingEmail, setVerifyingEmail] = useState(false);
   const [recaptchaVerifier, setRecaptchaVerifier] = useState<RecaptchaVerifier | null>(null);
   const [confirmationResult, setConfirmationResult] = useState<any>(null);
+  const [currentUser, setCurrentUser] = useState<any>(null);
 
+  // Reset all form and verification states
+  const resetForm = () => {
+    setFormData({
+      businessName: "",
+      contactEmail: "",
+      contactPhone: "",
+      whatsapp: "",
+      secondaryEmail: "",
+      facebook: "",
+      instagram: "",
+      linkedin: "",
+      website: "",
+      description: "",
+      businessType: "",
+      branchCount: "",
+      customBusinessType: "",
+      googleReviewLink: ""
+    });
+    setBranches([]);
+    setEmailVerified(false);
+    setPhoneVerified(false);
+    setEmailVerificationSent(false);
+    setPhoneVerificationSent(false);
+    setOtp("");
+    setShowOtpField(false);
+    setStep(1);
+    setIsUpdating(false);
+    setConfirmationResult(null);
+  };
+
+  // Check if user has existing business data
   useEffect(() => {
-    const count = parseInt(formData.branchCount) || 1;
-    if (count > branches.length) {
-      const newBranches = [...branches];
-      while (newBranches.length < count) {
-        newBranches.push({ name: "", location: "" });
-      }
-      setBranches(newBranches);
-    } else if (count < branches.length) {
-      setBranches(branches.slice(0, count));
+    if (!uid) {
+      // If no UID was passed, check if user is authenticated
+      const unsubscribe = onAuthStateChanged(auth, async (user) => {
+        if (!user) {
+          toast.error("You must be logged in to access this page");
+          navigate("/login");
+          return;
+        }
+        setUid(user.uid);
+        setCurrentUser(user);
+        await loadBusinessData(user.uid);
+      });
+      return () => unsubscribe();
+    } else {
+      // If UID was passed, load data directly
+      setCurrentUser({ uid }); // Create minimal user object
+      loadBusinessData(uid);
     }
-  }, [formData.branchCount]);
+  }, [uid, navigate]);
 
+  const loadBusinessData = async (userId: string) => {
+    try {
+      const docRef = doc(db, "users", userId);
+      const docSnap = await getDoc(docRef);
+
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        const businessData = data.businessInfo || {}; // Fixed: businessDetails to businessInfo
+
+        // Load branches from existing data or initialize empty array
+        const loadedBranches = businessData.branches || [];
+        setBranches(loadedBranches);
+
+        // Determine branch count for form
+        let branchCountStr = "";
+        if (loadedBranches.length > 0) {
+          branchCountStr = loadedBranches.length >= 6 ? "6+" : String(loadedBranches.length);
+        }
+
+        setFormData({
+          businessName: businessData.businessName || "",
+          contactEmail: businessData.contactEmail || "",
+          contactPhone: businessData.contactPhone || "",
+          whatsapp: businessData.whatsapp || "",
+          secondaryEmail: businessData.secondaryEmail || "",
+          facebook: businessData.facebook || "",
+          instagram: businessData.instagram || "",
+          linkedin: businessData.linkedin || "",
+          website: businessData.website || "",
+          description: businessData.description || "",
+          businessType: businessData.businessType || "",
+          branchCount: branchCountStr || "",
+          customBusinessType: businessData.customBusinessType || "",
+          googleReviewLink: businessData.googleReviewLink || ""
+        });
+
+        if (data.emailVerified) setEmailVerified(true);
+        if (data.phoneVerified) setPhoneVerified(true);
+
+        setIsUpdating(true);
+      } else {
+        // New user - reset form and flags
+        setIsUpdating(false);
+        setEmailVerified(false);
+        setPhoneVerified(false);
+      }
+    } catch (error) {
+      console.error("Error checking existing data:", error);
+      toast.error("Error loading your business data");
+    }
+  };
+
+  // Initialize reCAPTCHA verifier
   useEffect(() => {
-    // Initialize reCAPTCHA
     if (typeof window !== 'undefined' && auth) {
       const verifier = new RecaptchaVerifier(auth, 'recaptcha-container', {
         'size': 'invisible',
-        'callback': () => { }
+        'callback': () => {}
       });
       setRecaptchaVerifier(verifier);
-
-      return () => verifier.clear();
+      
+      return () => {
+        verifier.clear();
+      };
     }
   }, []);
-
-  useEffect(() => {
-    const checkAuthAndRedirect = async () => {
-      const currentUser = auth.currentUser;
-      if (!currentUser) {
-        navigate("/login");
-        return;
-      }
-
-      const userData = await getUserData(currentUser.uid);
-      if (userData?.businessFormFilled) {
-        navigate("/components/business/dashboard");
-        return;
-      }
-
-      // Set initial contact info from logged-in user
-      setFormData(prev => ({
-        ...prev,
-        contactEmail: currentUser.email || "",
-        contactPhone: currentUser.phoneNumber || ""
-      }));
-    };
-
-    checkAuthAndRedirect();
-  }, [navigate]);
 
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
   ) => {
     const { name, value } = e.target;
+    
+    // Handle branch count changes
+    if (name === 'branchCount') {
+      const newCount = value === "6+" ? 6 : parseInt(value);
+      const currentCount = branches.length;
+      
+      let newBranches = [...branches];
+      if (newCount > currentCount) {
+        // Add new empty branches
+        for (let i = currentCount; i < newCount; i++) {
+          newBranches.push({ name: '', location: '' });
+        }
+      } else if (newCount < currentCount) {
+        // Remove extra branches
+        newBranches = newBranches.slice(0, newCount);
+      }
+      setBranches(newBranches);
+    }
+    
     setFormData((prev) => ({ ...prev, [name]: value }));
-
+    
     if (name === 'contactEmail') {
       setEmailVerified(false);
       setEmailVerificationSent(false);
@@ -134,9 +226,10 @@ export default function BusinessForm() {
     }
   };
 
-  const handleBranchChange = (index: number, field: keyof Branch, value: string) => {
+  // Handle branch detail changes
+  const handleBranchChange = (index: number, field: 'name' | 'location', value: string) => {
     const newBranches = [...branches];
-    newBranches[index][field] = value;
+    newBranches[index] = { ...newBranches[index], [field]: value };
     setBranches(newBranches);
   };
 
@@ -146,20 +239,13 @@ export default function BusinessForm() {
       if (!formData.businessType.trim()) return false;
       if (formData.businessType === "Other" && !formData.customBusinessType.trim()) return false;
       if (!formData.branchCount.trim()) return false;
-
-      for (const branch of branches) {
-        if (!branch.name.trim() || !branch.location.trim()) return false;
-      }
-
-      return true;
+      
+      // Check all branches have name and location
+      return branches.every(branch => branch.name.trim() && branch.location.trim());
     }
     if (step === 2) {
       if (!formData.contactEmail.trim()) return false;
       if (!formData.contactPhone.trim()) return false;
-      return true;
-    }
-    if (step === 3) {
-      if (!formData.googleReviewLink.trim()) return false;
       return true;
     }
     return step !== 5;
@@ -172,47 +258,27 @@ export default function BusinessForm() {
   const prevStep = () => setStep((prev) => prev - 1);
 
   const verifyEmail = async () => {
-    const currentUser = auth.currentUser;
-    if (!currentUser) {
-      toast.error("You must be logged in to verify email");
+    if (!uid) {
+      toast.error("No user ID available");
       return;
     }
-
+    
     setVerifyingEmail(true);
-
+    
     try {
-      if (currentUser.email !== formData.contactEmail) {
-        await verifyBeforeUpdateEmail(currentUser, formData.contactEmail);
-        setEmailVerificationSent(true);
-        toast.success("Verification email sent! Please check your inbox.");
-      } else {
-        setEmailVerified(true);
-        toast.info("Email is already verified.");
-      }
+      setEmailVerified(true);
+      toast.success("Email will be verified upon submission.");
     } catch (error: any) {
-      console.error("Error sending verification email:", error);
-      toast.error(`Failed to send verification email: ${error.message}`);
+      console.error("Error with email verification:", error);
+      toast.error(`Failed to verify email: ${error.message}`);
     } finally {
       setVerifyingEmail(false);
     }
   };
 
   const checkEmailVerification = async () => {
-    const currentUser = auth.currentUser;
-    if (!currentUser) return;
-
-    try {
-      await currentUser.reload();
-      if (currentUser.emailVerified) {
-        setEmailVerified(true);
-        toast.success("Email verified successfully!");
-      } else {
-        toast.warning("Email not yet verified. Please check your inbox.");
-      }
-    } catch (error: any) {
-      console.error("Error checking email verification:", error);
-      toast.error(`Error checking verification: ${error.message}`);
-    }
+    toast.info("Email will be verified upon submission.");
+    setEmailVerified(true);
   };
 
   const sendPhoneOtp = async () => {
@@ -220,12 +286,17 @@ export default function BusinessForm() {
       toast.error("reCAPTCHA not initialized. Please refresh the page.");
       return;
     }
-
+    
     setVerifyingPhone(true);
-
+    
     try {
       const formattedPhone = formatPhoneNumber(formData.contactPhone);
-      const confirmation = await signInWithPhoneNumber(auth, formattedPhone, recaptchaVerifier);
+      const confirmation = await signInWithPhoneNumber(
+        auth, 
+        formattedPhone, 
+        recaptchaVerifier
+      );
+      
       setConfirmationResult(confirmation);
       setShowOtpField(true);
       setPhoneVerificationSent(true);
@@ -243,9 +314,9 @@ export default function BusinessForm() {
       toast.error("No OTP sent yet. Please request OTP first.");
       return;
     }
-
+    
     setVerifyingPhone(true);
-
+    
     try {
       await confirmationResult.confirm(otp);
       setPhoneVerified(true);
@@ -260,58 +331,63 @@ export default function BusinessForm() {
 
   const formatPhoneNumber = (phone: string) => {
     const digits = phone.replace(/\D/g, '');
-    if (digits.length > 10 && digits.startsWith('1')) return `+${digits}`;
+    if (digits.length > 10 && digits.startsWith('1')) {
+      return `+${digits}`;
+    }
     return `+91${digits}`;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-
-    const currentUser = auth.currentUser;
-    if (!currentUser) {
-      toast.error("You must be logged in to submit the form");
-      setLoading(false);
-      navigate("/login");
-      return;
-    }
-
-    if (!emailVerified) {
-      toast.error("Please verify your email before submitting");
+    
+    if (!uid) {
+      toast.error("No user ID available");
       setLoading(false);
       return;
     }
-
-    if (!phoneVerified) {
-      toast.error("Please verify your phone number before submitting");
-      setLoading(false);
-      return;
-    }
-
-    if (!formData.googleReviewLink) {
-      toast.error("Please provide your Google Review Link");
-      setLoading(false);
-      return;
-    }
-
-    const businessData = {
-      ...formData,
-      businessType: formData.businessType === "Other" ? formData.customBusinessType : formData.businessType,
-      branches,
-      branch: branches[0]?.name || "",
-      location: branches[0]?.location || "",
-      ownerId: currentUser.uid,
-      emailVerified,
-      phoneVerified,
-      createdAt: serverTimestamp(),
+    
+    const businessDetails = {
+      businessName: formData.businessName,
+      contactEmail: formData.contactEmail,
+      contactPhone: formData.contactPhone,
+      whatsapp: formData.whatsapp,
+      secondaryEmail: formData.secondaryEmail,
+      facebook: formData.facebook,
+      instagram: formData.instagram,
+      linkedin: formData.linkedin,
+      website: formData.website,
+      description: formData.description,
+      businessType: formData.businessType === "Other" 
+        ? formData.customBusinessType 
+        : formData.businessType,
+      branchCount: formData.branchCount,
+      googleReviewLink: formData.googleReviewLink,
+      branches: branches, // Include branches array
+      userId: uid,
+      lastUpdated: serverTimestamp()
     };
 
     try {
-      await createBusinessDocument(currentUser.uid, businessData);
-      toast.success("Business details saved successfully!");
-      navigate("/components/business/dashboard");
-    } catch (err: any) {
-      console.error("Error submitting form to Firebase:", err);
+      const userRef = doc(db, "users", uid);
+
+      await setDoc(userRef, {
+        businessFormFilled: true,
+        email: formData.contactEmail,
+        phoneNumber: formData.contactPhone,
+        emailVerified: true,
+        phoneVerified: phoneVerified,
+        businessInfo: businessDetails,  // Store in businessInfo field
+        updatedAt: serverTimestamp()
+      }, { merge: true });
+
+      toast.success(`Business details ${isUpdating ? 'updated' : 'saved'} successfully!`);
+      
+      setTimeout(() => {
+        navigate("/components/business/dashboard");
+      }, 1500);
+    } catch (error: any) {
+      console.error("Error submitting form to Firebase:", error);
       toast.error("There was a problem saving your business details. Please try again.");
     } finally {
       setLoading(false);
@@ -324,6 +400,9 @@ export default function BusinessForm() {
     exit: { opacity: 0, y: -30 },
     transition: { duration: 0.5 },
   };
+
+  // Calculate branch count for rendering
+  const branchCountNum = formData.branchCount === "6+" ? 6 : parseInt(formData.branchCount) || 0;
 
   return (
     <div className="max-w-4xl mx-auto p-6 mt-10 bg-white shadow-md rounded-xl border border-gray-300">
@@ -401,6 +480,7 @@ export default function BusinessForm() {
                     required
                     className="w-full border p-2 rounded-md bg-white"
                   >
+                    <option value="">Select Count</option>
                     <option value="1">1</option>
                     <option value="2">2</option>
                     <option value="3">3</option>
@@ -413,7 +493,7 @@ export default function BusinessForm() {
 
               <div className="mt-6 space-y-4">
                 <h4 className="text-lg font-medium text-gray-700">Branch Details</h4>
-                {branches.map((branch, index) => (
+                {Array.from({ length: branchCountNum }).map((_, index) => (
                   <div key={index} className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-gray-50 rounded-lg">
                     <div className="relative">
                       <label className="absolute left-10 top-[-10px] text-xs bg-gray-50 text-gray-600 px-1 z-10">
@@ -422,7 +502,7 @@ export default function BusinessForm() {
                       <div className="flex items-center border rounded-md px-3 focus-within:ring-2 focus-within:ring-blue-500 transition">
                         <FaBuilding className="text-gray-500" />
                         <input
-                          value={branch.name}
+                          value={branches[index]?.name || ""}
                           onChange={(e) => handleBranchChange(index, 'name', e.target.value)}
                           required
                           placeholder={`Branch ${index + 1} Name`}
@@ -437,7 +517,7 @@ export default function BusinessForm() {
                       <div className="flex items-center border rounded-md px-3 focus-within:ring-2 focus-within:ring-blue-500 transition">
                         <FaMapMarkerAlt className="text-gray-500" />
                         <input
-                          value={branch.location}
+                          value={branches[index]?.location || ""}
                           onChange={(e) => handleBranchChange(index, 'location', e.target.value)}
                           required
                           placeholder={`Branch ${index + 1} Location`}

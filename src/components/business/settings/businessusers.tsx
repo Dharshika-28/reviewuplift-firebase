@@ -1,7 +1,6 @@
 "use client"
 
 import type React from "react"
-
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -13,24 +12,27 @@ import { Label } from "@/components/ui/label"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import Sidebar from "@/components/sidebar"
 import { Search, Edit, Trash2, Plus, ChevronLeft, ChevronRight } from "lucide-react"
+import { db, auth } from "@/firebase/firebase"
+import { collection, getDocs, addDoc, doc, updateDoc, deleteDoc } from "firebase/firestore"
+import { onAuthStateChanged } from "firebase/auth"
+import { toast } from "@/components/ui/use-toast"
+import { FaSpinner } from "react-icons/fa"
+
+interface BusinessUser {
+  id: string;
+  name: string;
+  email: string;
+  locations: string;
+  role: string;
+}
 
 export default function BusinessUsersPage() {
-  // Sample data - replace with your actual data
-  const initialUsers = [
-    { id: 1, name: "Vishnu", email: "Vishnu@networkhrhnos.com", locations: "All locations", role: "Business Owner" },
-    { id: 2, name: "Vishnu", email: "networkhrhnos@gmail.com", locations: "All locations", role: "Business Owner" },
-    { id: 3, name: "John Doe", email: "john@example.com", locations: "New York", role: "Location Manager" },
-    { id: 4, name: "Jane Smith", email: "jane@example.com", locations: "Los Angeles", role: "Business Owner" },
-    { id: 5, name: "Mike Johnson", email: "mike@example.com", locations: "Chicago", role: "Location Manager" },
-    { id: 6, name: "Sarah Williams", email: "sarah@example.com", locations: "Houston", role: "Business Owner" },
-    { id: 7, name: "David Brown", email: "david@example.com", locations: "Phoenix", role: "Location Manager" },
-    { id: 8, name: "Emily Davis", email: "emily@example.com", locations: "Philadelphia", role: "Business Owner" },
-  ]
-
-  const [users, setUsers] = useState(initialUsers)
-  const [filteredUsers, setFilteredUsers] = useState(initialUsers)
+  const [users, setUsers] = useState<BusinessUser[]>([])
+  const [filteredUsers, setFilteredUsers] = useState<BusinessUser[]>([])
   const [currentPage, setCurrentPage] = useState(1)
   const usersPerPage = 6
+  const [loading, setLoading] = useState(true)
+  const [uid, setUid] = useState<string | null>(null)
 
   const [searchTerm, setSearchTerm] = useState({
     name: "",
@@ -39,15 +41,47 @@ export default function BusinessUsersPage() {
   })
 
   const [userForm, setUserForm] = useState({
-    id: 0,
+    id: "",
     name: "",
     email: "",
     locations: "",
-    role: "Business Owner",
+    role: "Business Owner", // Default role
   })
 
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
+
+  // Fetch business users from Firestore
+  const fetchBusinessUsers = async (uid: string) => {
+    setLoading(true)
+    try {
+      const businessUsersRef = collection(db, "users", uid, "businessUsers")
+      const querySnapshot = await getDocs(businessUsersRef)
+      const usersData: BusinessUser[] = []
+      
+      querySnapshot.forEach((doc) => {
+        usersData.push({
+          id: doc.id,
+          name: doc.data().name,
+          email: doc.data().email,
+          locations: doc.data().locations,
+          role: doc.data().role || "Business Owner" // Fallback to default
+        })
+      })
+      
+      setUsers(usersData)
+      setFilteredUsers(usersData)
+    } catch (error) {
+      console.error("Error fetching business users: ", error)
+      toast({
+        title: "Error",
+        description: "Failed to load business users",
+        variant: "destructive",
+      })
+    } finally {
+      setLoading(false)
+    }
+  }
 
   // Filter users based on search terms
   useEffect(() => {
@@ -62,41 +96,107 @@ export default function BusinessUsersPage() {
     setCurrentPage(1) // Reset to first page when search changes
   }, [searchTerm, users])
 
+  // Handle authentication state
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        setUid(user.uid)
+        fetchBusinessUsers(user.uid)
+      } else {
+        setLoading(false)
+      }
+    })
+    return () => unsubscribe()
+  }, [])
+
   // Get current users for pagination
   const indexOfLastUser = currentPage * usersPerPage
   const indexOfFirstUser = indexOfLastUser - usersPerPage
   const currentUsers = filteredUsers.slice(indexOfFirstUser, indexOfLastUser)
   const totalPages = Math.ceil(filteredUsers.length / usersPerPage)
 
-  const handleAddUser = () => {
+  const handleAddUser = async () => {
+    if (!uid) return
+
     if (userForm.name && userForm.email && userForm.locations) {
-      if (isEditing) {
-        // Update existing user
-        setUsers(users.map((user) => (user.id === userForm.id ? userForm : user)))
-      } else {
-        // Add new user
-        const newId = users.length > 0 ? Math.max(...users.map((u) => u.id)) + 1 : 1
-        setUsers([
-          ...users,
-          {
-            ...userForm,
-            id: newId,
-          },
-        ])
+      try {
+        if (isEditing) {
+          // Update existing user
+          const userRef = doc(db, "users", uid, "businessUsers", userForm.id)
+          await updateDoc(userRef, {
+            name: userForm.name,
+            email: userForm.email,
+            locations: userForm.locations,
+            role: userForm.role
+          })
+          
+          // Update local state
+          setUsers(users.map((user) => 
+            user.id === userForm.id ? { ...userForm } : user
+          ))
+        } else {
+          // Add new user
+          const businessUsersRef = collection(db, "users", uid, "businessUsers")
+          const docRef = await addDoc(businessUsersRef, {
+            name: userForm.name,
+            email: userForm.email,
+            locations: userForm.locations,
+            role: userForm.role
+          })
+          
+          // Update local state
+          setUsers([
+            ...users,
+            {
+              id: docRef.id,
+              ...userForm
+            }
+          ])
+        }
+
+        resetForm()
+        setIsDialogOpen(false)
+        toast({
+          title: "Success",
+          description: `User ${isEditing ? 'updated' : 'added'} successfully`,
+          variant: "default",
+        })
+      } catch (error) {
+        console.error(`Error ${isEditing ? 'updating' : 'adding'} user: `, error)
+        toast({
+          title: "Error",
+          description: `Failed to ${isEditing ? 'update' : 'add'} user`,
+          variant: "destructive",
+        })
       }
-      resetForm()
-      setIsDialogOpen(false)
     }
   }
 
-  const handleEditUser = (user: typeof userForm) => {
+  const handleEditUser = (user: BusinessUser) => {
     setUserForm(user)
     setIsEditing(true)
     setIsDialogOpen(true)
   }
 
-  const handleDeleteUser = (id: number) => {
-    setUsers(users.filter((user) => user.id !== id))
+  const handleDeleteUser = async (id: string) => {
+    if (!uid) return
+
+    try {
+      await deleteDoc(doc(db, "users", uid, "businessUsers", id))
+      setUsers(users.filter((user) => user.id !== id))
+      toast({
+        title: "Success",
+        description: "User deleted successfully",
+        variant: "default",
+      })
+    } catch (error) {
+      console.error("Error deleting user: ", error)
+      toast({
+        title: "Error",
+        description: "Failed to delete user",
+        variant: "destructive",
+      })
+    }
   }
 
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -109,11 +209,11 @@ export default function BusinessUsersPage() {
 
   const resetForm = () => {
     setUserForm({
-      id: 0,
+      id: "",
       name: "",
       email: "",
       locations: "",
-      role: "Business Owner",
+      role: "Business Owner", // Reset to default role
     })
     setIsEditing(false)
   }
@@ -122,6 +222,20 @@ export default function BusinessUsersPage() {
     if (pageNumber > 0 && pageNumber <= totalPages) {
       setCurrentPage(pageNumber)
     }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex min-h-screen bg-gray-50">
+        <Sidebar isAdmin={false} />
+        <div className="flex-1 md:ml-64 p-8">
+          <div className="flex items-center justify-center h-64">
+            <FaSpinner className="animate-spin text-2xl text-gray-500" />
+            <span className="ml-2 text-gray-500">Loading business users...</span>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -268,32 +382,40 @@ export default function BusinessUsersPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {currentUsers.map((user) => (
-                      <TableRow key={user.id}>
-                        <TableCell className="font-medium">{user.name}</TableCell>
-                        <TableCell>{user.email}</TableCell>
-                        <TableCell>{user.locations}</TableCell>
-                        <TableCell>{user.role}</TableCell>
-                        <TableCell className="text-right space-x-2">
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button variant="ghost" size="icon" onClick={() => handleEditUser(user)}>
-                                <Edit className="h-4 w-4" />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>Edit User</TooltipContent>
-                          </Tooltip>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button variant="ghost" size="icon" onClick={() => handleDeleteUser(user.id)}>
-                                <Trash2 className="h-4 w-4 text-red-500" />
-                              </Button>
-                            </TooltipTrigger>
-                            <TooltipContent>Delete User</TooltipContent>
-                          </Tooltip>
+                    {currentUsers.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                          No users found
                         </TableCell>
                       </TableRow>
-                    ))}
+                    ) : (
+                      currentUsers.map((user) => (
+                        <TableRow key={user.id}>
+                          <TableCell className="font-medium">{user.name}</TableCell>
+                          <TableCell>{user.email}</TableCell>
+                          <TableCell>{user.locations}</TableCell>
+                          <TableCell>{user.role}</TableCell>
+                          <TableCell className="text-right space-x-2">
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button variant="ghost" size="icon" onClick={() => handleEditUser(user)}>
+                                  <Edit className="h-4 w-4" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>Edit User</TooltipContent>
+                            </Tooltip>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button variant="ghost" size="icon" onClick={() => handleDeleteUser(user.id)}>
+                                  <Trash2 className="h-4 w-4 text-red-500" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>Delete User</TooltipContent>
+                            </Tooltip>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
                   </TableBody>
                 </Table>
               </div>

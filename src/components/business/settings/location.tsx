@@ -94,30 +94,18 @@ export default function LocationPage() {
 
       if (userSnap.exists()) {
         const businessInfo = userSnap.data().businessInfo || {};
-        let branchesData: Branch[] = [];
-
-        if (businessInfo.branches?.length) {
-          branchesData = businessInfo.branches.map((branch: any) => ({
-            id: branch.id || generateId(),
-            name: branch.name || "",
-            location: branch.location || "",
+        // Get branches array, default to empty array
+        const branchesData = businessInfo.branches || [];
+        // Map branches and ensure each has an id, createdAt, and isActive
+        const branchesWithId = branchesData.map((branch: any) => {
+          return {
+            ...branch,
+            id: branch.id || `branch-${Math.random().toString(36).substr(2, 9)}`,
             createdAt: branch.createdAt || new Date().toISOString(),
-            isActive: branch.isActive !== false,
-          }));
-        } else {
-          // Create main branch from business info
-          branchesData = [{
-            id: "main-branch",
-            name: businessInfo.branch || "Main Branch",
-            location: businessInfo.location || "",
-            createdAt: new Date().toISOString(),
-            isActive: true,
-          }];
-        }
-
-        setBranches(branchesData);
-      } else {
-        toast.warning("No business data found");
+            isActive: branch.isActive !== undefined ? branch.isActive : true,
+          };
+        });
+        setBranches(branchesWithId);
       }
     } catch (error) {
       console.error("Fetch error:", error);
