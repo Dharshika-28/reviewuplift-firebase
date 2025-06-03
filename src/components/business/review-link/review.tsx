@@ -4,48 +4,9 @@ import { useState, useEffect } from "react"
 import { Mountain, Star, ChevronRight, ThumbsUp, ThumbsDown } from "lucide-react"
 import { useNavigate } from "react-router-dom"
 import { db, auth } from "@/firebase/firebase"
-import { collection, doc, setDoc, serverTimestamp } from "firebase/firestore"
+import { collection, doc, setDoc, serverTimestamp, getDoc } from "firebase/firestore"
 import { toast } from "sonner"
-
-// Default state - must match your editor's default state
-const defaultState = {
-  businessName: "DONER HUT",
-  previewText: "How was your experience with Doner Hut?",
-  previewImage: null as string | null,
-  logoImage: null as string | null,
-  reviewLinkUrl: "https://go.reviewuplift.com/doner-hut",
-  isReviewGatingEnabled: true,
-  rating: 0,
-  welcomeTitle: "We value your opinion!",
-  welcomeText: "Share your dining experience and help us serve you better",
-  businessId: "" 
-}
-
-// Decode state from URL hash
-const decodeState = (encoded: string): typeof defaultState => {
-  try {
-    return JSON.parse(atob(encoded))
-  } catch {
-    return defaultState
-  }
-}
-
-// Get state from multiple sources
-const getPersistedState = (): typeof defaultState => {
-  if (typeof window !== 'undefined') {
-    const hash = window.location.hash.replace('#', '')
-    if (hash) {
-      try {
-        return { ...defaultState, ...decodeState(hash) }
-      } catch {}
-    }
-
-    if ((window as any).reviewLinkState) {
-      return { ...defaultState, ...(window as any).reviewLinkState }
-    }
-  }
-  return defaultState
-}
+import { onAuthStateChanged } from "firebase/auth"
 
 interface ReviewFormData {
   name: string
@@ -62,9 +23,17 @@ interface ReviewFormData {
 
 export default function ReviewPage() {
   const navigate = useNavigate()
-  const [state, setState] = useState(defaultState)
+  const [businessName, setBusinessName] = useState("")
+  const [previewText, setPreviewText] = useState("")
+  const [previewImage, setPreviewImage] = useState<string | null>(null)
+  const [logoImage, setLogoImage] = useState<string | null>(null)
+  const [reviewLinkUrl, setReviewLinkUrl] = useState("")
+  const [isReviewGatingEnabled, setIsReviewGatingEnabled] = useState(true)
+  const [rating, setRating] = useState(0)
+  const [welcomeTitle, setWelcomeTitle] = useState("")
+  const [welcomeText, setWelcomeText] = useState("")
   const [businessId, setBusinessId] = useState("")
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
   const [formData, setFormData] = useState({
     name: '',
@@ -84,47 +53,39 @@ export default function ReviewPage() {
   const [submitted, setSubmitted] = useState(false)
   const [submissionMessage, setSubmissionMessage] = useState("")
 
-  // Initialize state from persisted data
+  // Initialize state from Firestore
   useEffect(() => {
-  const loadInitialState = async () => {
-    const persistedState = getPersistedState();
-    setState(persistedState);
-
-    // Fetch business data from Firestore
-    if (persistedState.businessId) {
-      try {
-        const businessDoc = await getDoc(doc(db, "businesses", persistedState.businessId));
-        if (businessDoc.exists()) {
-          const businessData = businessDoc.data();
-          setState(prev => ({
-            ...prev,
-            businessName: businessData.businessName || prev.businessName,
-            previewText: businessData.previewText || prev.previewText,
-            previewImage: businessData.previewImage || prev.previewImage,
-            logoImage: businessData.logoImage || prev.logoImage,
-            reviewLinkUrl: businessData.reviewLinkUrl || prev.reviewLinkUrl,
-            isReviewGatingEnabled: businessData.isReviewGatingEnabled ?? prev.isReviewGatingEnabled,
-            welcomeTitle: businessData.welcomeTitle || prev.welcomeTitle,
-            welcomeText: businessData.welcomeText || prev.welcomeText
-          }));
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        try {
+          setBusinessId(user.uid);
+          
+          // Load configuration from Firestore
+          const docRef = doc(db, "reviewPages", user.uid);
+          const docSnap = await getDoc(docRef);
+          
+          if (docSnap.exists()) {
+            const data = docSnap.data();
+            setBusinessName(data.businessName || "");
+            setPreviewText(data.previewText || "");
+            setWelcomeTitle(data.welcomeTitle || "");
+            setWelcomeText(data.welcomeText || "");
+            setPreviewImage(data.previewImage || null);
+            setLogoImage(data.logoImage || null);
+            setIsReviewGatingEnabled(data.isReviewGatingEnabled ?? true);
+            setReviewLinkUrl(data.reviewLinkUrl || "");
+          }
+        } catch (error) {
+          console.error("Error loading config:", error);
+          toast.error("Failed to load review page configuration");
+        } finally {
+          setLoading(false);
         }
-      } catch (error) {
-        console.error("Error fetching business data:", error);
       }
-    }
-  }
-
-  loadInitialState();
-
-    // Listen for hash changes to sync with editor
-    const handleHashChange = () => {
-      const persistedState = getPersistedState()
-      setState(persistedState)
-    }
-
-    window.addEventListener('hashchange', handleHashChange)
-    return () => window.removeEventListener('hashchange', handleHashChange)
-  }, [])
+    });
+    
+    return () => unsubscribe();
+  }, []);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target
@@ -151,17 +112,17 @@ export default function ReviewPage() {
   }
 
   const handleSetRating = (rating: number) => {
-    setState(prev => ({ ...prev, rating }))
+    setRating(rating)
     setSubmitted(false)
     setShowForm(false)
   }
 
   const handleLeaveReview = async () => {
-    if (state.rating === 0) return
+    if (rating === 0) return
     
     // If review gating is disabled or rating is 4-5 stars
-    if (!state.isReviewGatingEnabled || state.rating >= 4) {
-      window.open(state.reviewLinkUrl, "_blank")
+    if (!isReviewGatingEnabled || rating >= 4) {
+      window.open(reviewLinkUrl, "_blank")
       return
     }
 
@@ -176,11 +137,10 @@ export default function ReviewPage() {
       return
     }
 
-    setLoading(true)
     try {
       await submitReview({
         ...formData,
-        rating: state.rating,
+        rating,
         businessId
       })
       setSubmissionMessage("We're sorry to hear about your experience. Thank you for your feedback.")
@@ -204,7 +164,7 @@ export default function ReviewPage() {
         userId: currentUser.uid,
         status: 'pending',
         createdAt: serverTimestamp(),
-        businessName: state.businessName
+        businessName
       }
 
       // Add to main reviews collection
@@ -225,7 +185,7 @@ export default function ReviewPage() {
   }
 
   const resetForm = () => {
-    setState(prev => ({ ...prev, rating: 0 }))
+    setRating(0)
     setShowForm(false)
     setSubmitted(false)
     setFormData({
@@ -244,6 +204,17 @@ export default function ReviewPage() {
     })
   }
 
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-gray-50 to-gray-100 p-4 sm:p-6 lg:p-8">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-orange-500 mx-auto"></div>
+          <p className="mt-4 text-gray-600">Loading review page...</p>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-gray-50 to-gray-100 p-4 sm:p-6 lg:p-8">
       <div className="w-full max-w-6xl mx-auto bg-white rounded-2xl shadow-xl overflow-hidden flex flex-col md:flex-row min-h-[600px]">
@@ -251,11 +222,11 @@ export default function ReviewPage() {
         <div className="w-full md:w-1/2 bg-gradient-to-b from-orange-50 to-orange-100 relative overflow-hidden">
           <div className="absolute inset-0 opacity-10 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxnIGZpbGw9IiNGRjk4MDAiIGZpbGwtb3BhY2l0eT0iMC40Ij48cGF0aCBkPSJNMCAwYzExLjA0NiAwIDIwIDguOTU0IDIwIDIwSDBWMHoiLz48cGF0aCBkPSJNNDAgNDBjLTExLjA0NiAwLTIwLTguOTU0LTIwLTIwSDB2MjBjMCAxMS4wNDYgOC45NTQgMjAgMjAgMjB6Ii8+PC9nPjwvZz48L3N2Zz4=')]"></div>
           <div className="relative h-full flex flex-col justify-center items-center p-8">
-            {state.previewImage ? (
+            {previewImage ? (
               <div className="w-full max-w-md aspect-square rounded-2xl overflow-hidden shadow-2xl">
                 <img
-                  src={state.previewImage}
-                  alt={state.businessName}
+                  src={previewImage}
+                  alt={businessName}
                   className="w-full h-full object-cover transition-transform duration-500 hover:scale-105"
                 />
               </div>
@@ -263,14 +234,14 @@ export default function ReviewPage() {
               <div className="w-full max-w-md aspect-square rounded-2xl bg-white shadow-2xl flex items-center justify-center">
                 <div className="text-center p-8">
                   <Mountain className="h-20 w-20 mx-auto text-orange-500 mb-4" />
-                  <h3 className="text-2xl font-bold text-gray-800">{state.businessName}</h3>
+                  <h3 className="text-2xl font-bold text-gray-800">{businessName || "Your Business"}</h3>
                 </div>
               </div>
             )}
             <div className="mt-8 text-center max-w-md">
-              <h3 className="text-3xl font-bold text-gray-800 mb-4">{state.welcomeTitle}</h3>
+              <h3 className="text-3xl font-bold text-gray-800 mb-4">{welcomeTitle || "We value your opinion!"}</h3>
               <p className="text-lg text-gray-600">
-                {state.welcomeText}
+                {welcomeText || "Share your experience and help us improve"}
               </p>
             </div>
           </div>
@@ -296,11 +267,11 @@ export default function ReviewPage() {
             ) : (
               <>
                 {/* Logo Display */}
-                {state.logoImage && (
+                {logoImage && (
                   <div className="flex justify-center mb-6">
                     <img 
-                      src={state.logoImage} 
-                      alt={`${state.businessName} Logo`} 
+                      src={logoImage} 
+                      alt={`${businessName} Logo`} 
                       className="h-16 object-contain"
                     />
                   </div>
@@ -308,7 +279,7 @@ export default function ReviewPage() {
 
                 <div className="text-center mb-8">
                   <h2 className="text-3xl font-bold text-gray-800 mb-2">Rate Your Experience</h2>
-                  <p className="text-gray-600">{state.previewText}</p>
+                  <p className="text-gray-600">{previewText || "How was your experience?"}</p>
                 </div>
 
                 <div className="mb-8">
@@ -320,12 +291,12 @@ export default function ReviewPage() {
                         onMouseEnter={() => setHoveredStar(star)}
                         onMouseLeave={() => setHoveredStar(0)}
                         className={`p-2 rounded-full transition-all ${
-                          star <= (hoveredStar || state.rating) ? 'bg-orange-50' : 'hover:bg-gray-50'
+                          star <= (hoveredStar || rating) ? 'bg-orange-50' : 'hover:bg-gray-50'
                         }`}
                       >
                         <Star
                           className={`h-10 w-10 ${
-                            star <= (hoveredStar || state.rating)
+                            star <= (hoveredStar || rating)
                               ? 'fill-yellow-400 text-yellow-400'
                               : 'text-gray-300'
                           }`}
@@ -339,10 +310,10 @@ export default function ReviewPage() {
                     <span>Very satisfied</span>
                   </div>
 
-                  {state.rating > 0 && (
+                  {rating > 0 && (
                     <div className={`mt-6 p-4 rounded-lg bg-gray-50 border border-gray-200`}>
                       <p className="text-gray-700 font-medium text-center flex items-center justify-center">
-                        {state.rating >= 4 ? (
+                        {rating >= 4 ? (
                           <>
                             <ThumbsUp className="mr-2 text-green-500" />
                             We're glad you enjoyed your meal!
@@ -358,7 +329,7 @@ export default function ReviewPage() {
                   )}
                 </div>
 
-                {showForm && state.rating <= 3 && state.isReviewGatingEnabled && (
+                {showForm && rating <= 3 && isReviewGatingEnabled && (
                   <div className="mb-6 space-y-4">
                     <div>
                       <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">
@@ -464,33 +435,21 @@ export default function ReviewPage() {
 
                 <button
                   onClick={handleLeaveReview}
-                  disabled={state.rating === 0 || loading}
+                  disabled={rating === 0}
                   className={`
                     w-full py-4 px-6 rounded-lg font-medium text-white flex items-center justify-center
                     transition-all duration-300
-                    ${state.rating === 0 || loading
+                    ${rating === 0
                       ? 'bg-gray-300 cursor-not-allowed'
                       : 'bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 shadow-md hover:shadow-lg'
                     }
                   `}
                 >
-                  {loading ? (
-                    <>
-                      <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                      </svg>
-                      Processing...
-                    </>
-                  ) : (
-                    <>
-                      {state.rating > 0 ? 
-                        (state.rating >= 4 ? 'Continue to Review' : 
-                         (showForm ? 'Submit Your Feedback' : 'Continue to Feedback')) : 
-                        'Select a Rating to Continue'}
-                      <ChevronRight className="ml-2 h-5 w-5" />
-                    </>
-                  )}
+                  {rating > 0 ? 
+                    (rating >= 4 ? 'Continue to Review' : 
+                     (showForm ? 'Submit Your Feedback' : 'Continue to Feedback')) : 
+                    'Select a Rating to Continue'}
+                  <ChevronRight className="ml-2 h-5 w-5" />
                 </button>
               </>
             )}

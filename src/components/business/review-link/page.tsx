@@ -1,6 +1,5 @@
 "use client"
 
-import type React from "react"
 import { useState, useRef, useEffect } from "react"
 import { Edit, Mountain, Star, Upload, ChevronRight, ThumbsUp, ThumbsDown, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -12,88 +11,32 @@ import Sidebar from "@/components/sidebar"
 import ConfirmDialog from "@/components/confirm-dialog"
 import { useNavigate } from "react-router-dom"
 import { Textarea } from "@/components/ui/textarea"
+import { auth, db, storage } from "@/firebase/firebase"
+import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore"
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage"
+import { onAuthStateChanged } from "firebase/auth"
 
-// Default state
-const defaultState = {
-  businessName: "DONER HUT",
-  previewText: "How was your experience with Doner Hut?",
+// Initialize with empty values
+const initialState = {
+  businessName: "",
+  previewText: "",
   previewImage: null as string | null,
   logoImage: null as string | null,
-  reviewLinkUrl: "https://go.reviewuplift.com/doner-hut",
+  reviewLinkUrl: "",
   isReviewGatingEnabled: true,
   rating: 0,
-  welcomeTitle: "We value your opinion!",
-  welcomeText: "Share your dining experience and help us serve you better"
-}
-
-// Encode state to a URL-safe string
-const encodeState = (state: typeof defaultState): string => {
-  try {
-    return btoa(JSON.stringify(state))
-  } catch {
-    return ''
-  }
-}
-
-// Decode state from URL-safe string
-const decodeState = (encoded: string): typeof defaultState => {
-  try {
-    return JSON.parse(atob(encoded))
-  } catch {
-    return defaultState
-  }
-}
-
-// Get state from multiple sources (URL hash, window global, or default)
-const getPersistedState = (): typeof defaultState => {
-  // First try to get from URL hash
-  if (typeof window !== 'undefined') {
-    const hash = window.location.hash.replace('#', '')
-    if (hash) {
-      try {
-        const decoded = decodeState(hash)
-        return { ...defaultState, ...decoded }
-      } catch {
-        // If hash decode fails, continue to next method
-      }
-    }
-
-    // Then try window global (for same-session persistence)
-    if ((window as any).reviewLinkState) {
-      return { ...defaultState, ...(window as any).reviewLinkState }
-    }
-  }
-
-  return defaultState
-}
-
-// Save state to multiple places
-const persistState = (state: typeof defaultState) => {
-  if (typeof window !== 'undefined') {
-    // Save to window global for same-session persistence
-    (window as any).reviewLinkState = state
-    
-    // Save to URL hash for reload persistence
-    const encoded = encodeState(state)
-    const newUrl = `${window.location.pathname}${window.location.search}#${encoded}`
-    window.history.replaceState(null, '', newUrl)
-  }
+  welcomeTitle: "",
+  welcomeText: ""
 }
 
 export default function ReviewLinkPage() {
   const navigate = useNavigate()
-  
-  // State for review link settings
+  const [currentUser, setCurrentUser] = useState<any>(null);
   const [reviewLinkUrl, setReviewLinkUrl] = useState("")
   const [isEditingUrl, setIsEditingUrl] = useState(false)
-  const [tempUrl, setTempUrl] = useState("")
   const [tempBusinessSlug, setTempBusinessSlug] = useState("")
-
-  // State for review gating
   const [isReviewGatingEnabled, setIsReviewGatingEnabled] = useState(true)
   const [showGatingConfirm, setShowGatingConfirm] = useState(false)
-
-  // State for desktop preview customization
   const [businessName, setBusinessName] = useState("")
   const [previewText, setPreviewText] = useState("")
   const [welcomeTitle, setWelcomeTitle] = useState("")
@@ -127,62 +70,103 @@ export default function ReviewLinkPage() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const logoInputRef = useRef<HTMLInputElement>(null)
   const previewRef = useRef<HTMLDivElement>(null)
+  const [logoUploading, setLogoUploading] = useState(false)
+  const [previewImageUploading, setPreviewImageUploading] = useState(false)
+  const [loading, setLoading] = useState(true)
 
-  // Initialize state from persisted data on component mount
   useEffect(() => {
-    const persistedState = getPersistedState()
-    console.log('Loading persisted state:', persistedState) // Debug log
-    
-    setReviewLinkUrl(persistedState.reviewLinkUrl)
-    setTempUrl(persistedState.reviewLinkUrl)
-    // Extract business slug from URL
-    const slug = persistedState.reviewLinkUrl.replace('https://go.reviewuplift.com/', '')
-    setTempBusinessSlug(slug)
-    setIsReviewGatingEnabled(persistedState.isReviewGatingEnabled)
-    setBusinessName(persistedState.businessName)
-    setPreviewText(persistedState.previewText)
-    setWelcomeTitle(persistedState.welcomeTitle || defaultState.welcomeTitle)
-    setWelcomeText(persistedState.welcomeText || defaultState.welcomeText)
-    setTempBusinessName(persistedState.businessName)
-    setTempPreviewText(persistedState.previewText)
-    setTempWelcomeTitle(persistedState.welcomeTitle || defaultState.welcomeTitle)
-    setTempWelcomeText(persistedState.welcomeText || defaultState.welcomeText)
-    setPreviewImage(persistedState.previewImage)
-    setLogoImage(persistedState.logoImage)
-    setRating(persistedState.rating || 0)
-  }, [])
-
-  // Persist state whenever local state changes
-  useEffect(() => {
-    // Skip the first render to avoid overwriting with empty initial state
-    if (businessName || previewText || reviewLinkUrl) {
-      const currentState = {
-        businessName,
-        previewText,
-        previewImage,
-        logoImage,
-        reviewLinkUrl,
-        isReviewGatingEnabled,
-        rating,
-        welcomeTitle,
-        welcomeText
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        setCurrentUser(user);
+        try {
+          const docRef = doc(db, "reviewPages", user.uid);
+          const docSnap = await getDoc(docRef);
+          
+          if (docSnap.exists()) {
+            const data = docSnap.data();
+            setBusinessName(data.businessName || "");
+            setPreviewText(data.previewText || "");
+            setWelcomeTitle(data.welcomeTitle || "");
+            setWelcomeText(data.welcomeText || "");
+            setPreviewImage(data.previewImage || null);
+            setLogoImage(data.logoImage || null);
+            setIsReviewGatingEnabled(data.isReviewGatingEnabled ?? true);
+            
+            // Auto-generate review URL from business name
+            let reviewUrl = data.reviewLinkUrl;
+            if (!reviewUrl) {
+              const slug = data.businessName 
+                ? data.businessName.toLowerCase().replace(/\s+/g, '-')
+                : 'your-business';
+              reviewUrl = `https://go.reviewuplift.com/${slug}`;
+            }
+            setReviewLinkUrl(reviewUrl);
+            
+            // Extract slug for editing
+            const slug = reviewUrl.replace('https://go.reviewuplift.com/', '');
+            setTempBusinessSlug(slug);
+          } else {
+            // New user - set default URL placeholder
+            setReviewLinkUrl(`https://go.reviewuplift.com/your-business`);
+            setTempBusinessSlug('your-business');
+          }
+        } catch (error) {
+          console.error("Error loading config:", error);
+        } finally {
+          setLoading(false);
+        }
       }
-      console.log('Persisting state:', currentState) // Debug log
-      persistState(currentState)
-    }
-  }, [businessName, previewText, previewImage, logoImage, reviewLinkUrl, isReviewGatingEnabled, rating, welcomeTitle, welcomeText])
+    });
+    
+    return () => unsubscribe();
+  }, []);
 
-  // Handle URL edit
+  useEffect(() => {
+    if (!currentUser || loading) return;
+    
+    const saveConfig = async () => {
+      try {
+        const config = {
+          businessName,
+          previewText,
+          previewImage,
+          logoImage,
+          reviewLinkUrl,
+          isReviewGatingEnabled,
+          welcomeTitle,
+          welcomeText,
+          updatedAt: serverTimestamp()
+        };
+        
+        await setDoc(doc(db, "reviewPages", currentUser.uid), config);
+      } catch (error) {
+        console.error("Error saving config:", error);
+      }
+    };
+    
+    const timeoutId = setTimeout(saveConfig, 1000);
+    return () => clearTimeout(timeoutId);
+  }, [
+    businessName,
+    previewText,
+    previewImage,
+    logoImage,
+    reviewLinkUrl,
+    isReviewGatingEnabled,
+    welcomeTitle,
+    welcomeText,
+    currentUser,
+    loading
+  ]);
+
   const handleUrlEdit = () => {
     if (isEditingUrl) {
       const newUrl = `https://go.reviewuplift.com/${tempBusinessSlug}`
       setReviewLinkUrl(newUrl)
-      setTempUrl(newUrl)
     }
     setIsEditingUrl(!isEditingUrl)
   }
 
-  // Handle preview edit
   const handlePreviewEdit = () => {
     if (isEditingPreview) {
       setBusinessName(tempBusinessName)
@@ -190,7 +174,6 @@ export default function ReviewLinkPage() {
       setWelcomeTitle(tempWelcomeTitle)
       setWelcomeText(tempWelcomeText)
     } else {
-      // When starting to edit, sync temp values with current values
       setTempBusinessName(businessName)
       setTempPreviewText(previewText)
       setTempWelcomeTitle(welcomeTitle)
@@ -199,68 +182,62 @@ export default function ReviewLinkPage() {
     setIsEditingPreview(!isEditingPreview)
   }
 
-  // Handle image upload
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
-    if (file) {
-      const reader = new FileReader()
-      reader.onload = (event) => {
-        if (event.target?.result) {
-          setPreviewImage(event.target.result as string)
-        }
-      }
-      reader.readAsDataURL(file)
+    if (!file || !currentUser) return;
+    
+    setPreviewImageUploading(true);
+    try {
+      const storageRef = ref(storage, `preview-images/${currentUser.uid}/${file.name}`);
+      await uploadBytes(storageRef, file);
+      const url = await getDownloadURL(storageRef);
+      setPreviewImage(url);
+    } catch (error) {
+      console.error("Error uploading image:", error);
+    } finally {
+      setPreviewImageUploading(false);
     }
   }
 
-  // Handle logo upload
-  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
-    if (file) {
-      const reader = new FileReader()
-      reader.onload = (event) => {
-        if (event.target?.result) {
-          setLogoImage(event.target.result as string)
-        }
-      }
-      reader.readAsDataURL(file)
+    if (!file || !currentUser) return;
+    
+    setLogoUploading(true);
+    try {
+      const storageRef = ref(storage, `logos/${currentUser.uid}/${file.name}`);
+      await uploadBytes(storageRef, file);
+      const url = await getDownloadURL(storageRef);
+      setLogoImage(url);
+    } catch (error) {
+      console.error("Error uploading logo:", error);
+    } finally {
+      setLogoUploading(false);
     }
   }
 
-  // Delete uploaded image
   const handleDeleteImage = () => {
     setPreviewImage(null)
   }
 
-  // Delete uploaded logo
   const handleDeleteLogo = () => {
     setLogoImage(null)
   }
 
-  // Trigger file input click
   const triggerFileInput = () => {
     fileInputRef.current?.click()
   }
 
-  // Trigger logo input click
   const triggerLogoInput = () => {
     logoInputRef.current?.click()
   }
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target
-    setFormData(prev => ({
-      ...prev,
-      [name]: value
-    }))
-    // Clear error when user types
-    setFormErrors(prev => ({
-      ...prev,
-      [name]: false
-    }))
+    setFormData(prev => ({ ...prev, [name]: value }))
+    setFormErrors(prev => ({ ...prev, [name]: false }))
   }
 
-  // Validate form
   const validateForm = () => {
     const errors = {
       name: !formData.name.trim(),
@@ -273,39 +250,30 @@ export default function ReviewLinkPage() {
     return !Object.values(errors).some(Boolean)
   }
 
-  // Handle review submission based on rating
   const handleLeaveReview = () => {
     if (rating === 0) return
     
-    // If review gating is disabled, always go to review link
     if (!isReviewGatingEnabled) {
       window.open(reviewLinkUrl, "_blank")
       return
     }
 
-    // For 4-5 stars with gating enabled, go to review link
     if (rating >= 4) {
       window.open(reviewLinkUrl, "_blank")
       return
     }
 
-    // For 1-3 stars with gating enabled
     if (!showForm) {
       setShowForm(true)
       return
     }
 
-    // Validate form before submission
-    if (!validateForm()) {
-      return
-    }
+    if (!validateForm()) return
 
-    // Form is valid, proceed with submission
     setSubmitted(true)
     setSubmissionMessage("We're sorry to hear about your experience. Thank you for your feedback.")
   }
 
-  // Toggle review gating with confirmation
   const handleToggleReviewGating = () => {
     if (isReviewGatingEnabled) {
       setShowGatingConfirm(true)
@@ -314,18 +282,15 @@ export default function ReviewLinkPage() {
     }
   }
 
-  // Confirm disabling review gating
   const confirmDisableGating = () => {
     setIsReviewGatingEnabled(false)
     setShowGatingConfirm(false)
   }
 
-  // Navigate to full preview page
   const navigateToPreviewPage = () => {
     navigate('/review')
   }
 
-  // Reset form for new review
   const resetForm = () => {
     setRating(0)
     setShowForm(false)
@@ -347,6 +312,20 @@ export default function ReviewLinkPage() {
     })
   }
 
+  if (loading) {
+    return (
+      <div className="flex min-h-screen bg-gray-50">
+        <Sidebar isAdmin={false} />
+        <div className="flex-1 md:ml-64 p-8 flex items-center justify-center">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-orange-500 mx-auto"></div>
+            <p className="mt-4 text-gray-600">Loading your review settings...</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="flex min-h-screen bg-gray-50">
       <Sidebar isAdmin={false} />
@@ -355,13 +334,11 @@ export default function ReviewLinkPage() {
         <div className="max-w-6xl mx-auto">
           <h1 className="text-3xl font-bold mb-6">Review Link</h1>
           <p className="text-muted-foreground mb-8">
-            Customize the behavior, text, and images of your Review Link. If only one integration is active, customers
-            will be sent directly to the review site, skipping the "Positive Experience" page.
+            Customize the behavior, text, and images of your Review Link.
           </p>
 
           <div className="grid lg:grid-cols-3 gap-8">
             <div className="lg:col-span-2 space-y-6">
-              {/* Review Link URL */}
               <Card>
                 <CardHeader>
                   <div className="flex justify-between items-center">
@@ -388,6 +365,7 @@ export default function ReviewLinkPage() {
                           onChange={(e) => setTempBusinessSlug(e.target.value)}
                           aria-label="Review link business slug"
                           className="flex-1"
+                          placeholder="your-business"
                         />
                       </div>
                     </div>
@@ -421,7 +399,6 @@ export default function ReviewLinkPage() {
                 </CardContent>
               </Card>
 
-              {/* Review Gating */}
               <Card>
                 <CardHeader>
                   <CardTitle>Review Gating (Star Filter)</CardTitle>
@@ -454,7 +431,6 @@ export default function ReviewLinkPage() {
                 </CardContent>
               </Card>
 
-              {/* Preview Editor */}
               <Card>
                 <CardHeader>
                   <div className="flex justify-between items-center">
@@ -479,6 +455,7 @@ export default function ReviewLinkPage() {
                           value={tempBusinessName}
                           onChange={(e) => setTempBusinessName(e.target.value)}
                           aria-label="Business name"
+                          placeholder="Enter your business name"
                         />
                       </div>
                       <div className="space-y-2">
@@ -488,6 +465,7 @@ export default function ReviewLinkPage() {
                           value={tempWelcomeTitle}
                           onChange={(e) => setTempWelcomeTitle(e.target.value)}
                           aria-label="Welcome title"
+                          placeholder="Enter welcome title"
                         />
                       </div>
                       <div className="space-y-2">
@@ -497,6 +475,7 @@ export default function ReviewLinkPage() {
                           value={tempWelcomeText}
                           onChange={(e) => setTempWelcomeText(e.target.value)}
                           aria-label="Welcome text"
+                          placeholder="Enter welcome message"
                         />
                       </div>
                       <div className="space-y-2">
@@ -506,6 +485,7 @@ export default function ReviewLinkPage() {
                           value={tempPreviewText}
                           onChange={(e) => setTempPreviewText(e.target.value)}
                           aria-label="Preview text"
+                          placeholder="Enter preview text"
                         />
                       </div>
                       <div className="space-y-2">
@@ -519,9 +499,26 @@ export default function ReviewLinkPage() {
                           aria-label="Upload business image"
                         />
                         <div className="flex items-center gap-2">
-                          <Button variant="outline" onClick={triggerFileInput} aria-label="Upload business image">
-                            <Upload className="h-4 w-4 mr-2" aria-hidden="true" />
-                            Upload Image
+                          <Button 
+                            variant="outline" 
+                            onClick={triggerFileInput}
+                            disabled={previewImageUploading}
+                            aria-label="Upload business image"
+                          >
+                            {previewImageUploading ? (
+                              <span className="flex items-center">
+                                <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-gray-700" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                Uploading...
+                              </span>
+                            ) : (
+                              <>
+                                <Upload className="h-4 w-4 mr-2" aria-hidden="true" />
+                                Upload Image
+                              </>
+                            )}
                           </Button>
                           {previewImage && (
                             <Button 
@@ -556,9 +553,26 @@ export default function ReviewLinkPage() {
                           aria-label="Upload business logo"
                         />
                         <div className="flex items-center gap-2">
-                          <Button variant="outline" onClick={triggerLogoInput} aria-label="Upload business logo">
-                            <Upload className="h-4 w-4 mr-2" aria-hidden="true" />
-                            Upload Logo
+                          <Button 
+                            variant="outline" 
+                            onClick={triggerLogoInput}
+                            disabled={logoUploading}
+                            aria-label="Upload business logo"
+                          >
+                            {logoUploading ? (
+                              <span className="flex items-center">
+                                <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-gray-700" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                Uploading...
+                              </span>
+                            ) : (
+                              <>
+                                <Upload className="h-4 w-4 mr-2" aria-hidden="true" />
+                                Upload Logo
+                              </>
+                            )}
                           </Button>
                           {logoImage && (
                             <Button 
@@ -594,7 +608,6 @@ export default function ReviewLinkPage() {
               </Card>
             </div>
 
-            {/* Desktop Preview - Updated Design */}
             <div className="lg:col-span-1">
               <div className="sticky top-8">
                 <Card>
@@ -611,9 +624,8 @@ export default function ReviewLinkPage() {
                         ref={previewRef}
                         className="overflow-y-auto"
                       >
-                        {/* Left Side - Image/Pattern */}
                         <div className="w-full bg-gradient-to-b from-orange-50 to-orange-100 relative overflow-hidden">
-                          <div className="absolute inset-0 opacity-10 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxnIGZpbGw9IiNGRjk4MDAiIGZpbGwtb3BhY2l0eT0iMC40Ij48cGF0aCBkPSJNMCAwYzExLjA0NiAwIDIwIDguOTU0IDIwIDIwSDBWMHoiLz48cGF0aCBkPSJNNDAgNDBjLTExLjA0NiAwLTIwLTguOTU0LTIwLTIwSDB2MjBjMCAxMS4wNDYgOC45NTQgMjAgMjAgMjB6Ii8+PC9nPjwvZz48L3N2Zz4=')]"></div>
+                          <div className="absolute inset-0 opacity-10 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxnIGZpbGw9IiNGRjk4MDAiIGZpbGwtb3BhY2l0eT0iMC40Ij48cGF0aCBkPSJNMCAwYzExLjA0NiAwIDIwIDguOTU4IDIwIDIwSDBWMHoiLz48cGF0aCBkPSJNNDAgNDBjLTExLjA0NiAwLTIwLTguOTU0LTIwLTIwSDB2MjBjMCAxMS4wNDYgOC45NTQgMjAgMjAgMjB6Ii8+PC9nPjwvZz48L3N2Zz4=')]"></div>
                           <div className="relative h-full flex flex-col justify-center items-center p-6">
                             {previewImage ? (
                               <div className="w-full max-w-xs aspect-square rounded-2xl overflow-hidden shadow-2xl">
@@ -627,20 +639,19 @@ export default function ReviewLinkPage() {
                               <div className="w-full max-w-xs aspect-square rounded-2xl bg-white shadow-2xl flex items-center justify-center">
                                 <div className="text-center p-6">
                                   <Mountain className="h-16 w-16 mx-auto text-orange-500 mb-4" />
-                                  <h3 className="text-xl font-bold text-gray-800">{businessName}</h3>
+                                  <h3 className="text-xl font-bold text-gray-800">{businessName || "Your Business"}</h3>
                                 </div>
                               </div>
                             )}
                             <div className="mt-6 text-center max-w-xs">
-                              <h3 className="text-2xl font-bold text-gray-800 mb-3">{welcomeTitle}</h3>
+                              <h3 className="text-2xl font-bold text-gray-800 mb-3">{welcomeTitle || "We value your opinion!"}</h3>
                               <p className="text-gray-600">
-                                {welcomeText}
+                                {welcomeText || "Share your experience and help us improve"}
                               </p>
                             </div>
                           </div>
                         </div>
 
-                        {/* Right Side - Review Form */}
                         <div className="w-full bg-white p-6 flex flex-col justify-center">
                           <div className="max-w-xs mx-auto w-full">
                             {submitted ? (
@@ -670,7 +681,7 @@ export default function ReviewLinkPage() {
                                 )}
                                 <div className="text-center mb-6">
                                   <h2 className="text-2xl font-bold text-gray-800 mb-2">Rate Your Experience</h2>
-                                  <p className="text-gray-600">{previewText}</p>
+                                  <p className="text-gray-600">{previewText || "How was your experience?"}</p>
                                 </div>
 
                                 <div className="mb-6">
@@ -859,7 +870,6 @@ export default function ReviewLinkPage() {
         </div>
       </div>
 
-      {/* Confirm Dialog for Disabling Review Gating */}
       <ConfirmDialog
         isOpen={showGatingConfirm}
         onClose={() => setShowGatingConfirm(false)}

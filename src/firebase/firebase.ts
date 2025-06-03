@@ -17,8 +17,8 @@ import {
   where,
   getDocs,
 } from "firebase/firestore";
+import { getStorage } from "firebase/storage";
 
-// Firebase configuration
 const firebaseConfig = {
   apiKey: "AIzaSyDLew3ixW5fTSOBy6oFMb8U-t4UnF9cMBU",
   authDomain: "reviewuplift-378f0.firebaseapp.com",
@@ -29,13 +29,12 @@ const firebaseConfig = {
   measurementId: "G-TS1H91W493",
 };
 
-// Initialize Firebase
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app);
+export const storage = getStorage(app);
 const provider = new GoogleAuthProvider();
 
-// Google Sign-In
 export const signInWithGoogle = async () => {
   const result = await signInWithPopup(auth, provider);
   const user = result.user;
@@ -45,7 +44,5 @@ export const signInWithGoogle = async () => {
 
   if (!existingUsers.empty && existingUsers.docs[0].id !== user.uid) {
     throw new Error("Email already exists. Please log in using email and password.");
-  
-};
-
+  }
 };
