@@ -61,7 +61,7 @@ export default function ReviewPage() {
           setBusinessId(user.uid);
           
           // Load configuration from Firestore
-          const docRef = doc(db, "reviewPages", user.uid);
+          const docRef = doc(db, "review_link", user.uid);
           const docSnap = await getDoc(docRef);
           
           if (docSnap.exists()) {

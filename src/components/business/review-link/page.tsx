@@ -16,7 +16,18 @@ import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore"
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage"
 import { onAuthStateChanged } from "firebase/auth"
 
-// Initialize with empty values
+
+
+// Add UUID generation function
+const generateUUID = () => {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    const r = Math.random() * 16 | 0,
+      v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+};
+
+
 const initialState = {
   businessName: "",
   previewText: "",
@@ -79,7 +90,7 @@ export default function ReviewLinkPage() {
       if (user) {
         setCurrentUser(user);
         try {
-          const docRef = doc(db, "reviewPages", user.uid);
+          const docRef = doc(db, "review_link", user.uid);
           const docSnap = await getDoc(docRef);
           
           if (docSnap.exists()) {
@@ -138,7 +149,7 @@ export default function ReviewLinkPage() {
           updatedAt: serverTimestamp()
         };
         
-        await setDoc(doc(db, "reviewPages", currentUser.uid), config);
+        await setDoc(doc(db, "review_link", currentUser.uid), config, { merge: true });
       } catch (error) {
         console.error("Error saving config:", error);
       }
@@ -188,10 +199,23 @@ export default function ReviewLinkPage() {
     
     setPreviewImageUploading(true);
     try {
-      const storageRef = ref(storage, `preview-images/${currentUser.uid}/${file.name}`);
+      // Generate unique filename with UUID
+      const extension = file.name.split('.').pop();
+      const uniqueFilename = `${generateUUID()}.${extension}`;
+      
+      // Use organized storage path
+      const storageRef = ref(storage, `preview-images/${currentUser.uid}/${uniqueFilename}`);
+      
       await uploadBytes(storageRef, file);
       const url = await getDownloadURL(storageRef);
       setPreviewImage(url);
+      
+      // Immediately update Firestore
+      await setDoc(
+        doc(db, "reviewPages", currentUser.uid),
+        { previewImage: url },
+        { merge: true }
+      );
     } catch (error) {
       console.error("Error uploading image:", error);
     } finally {
@@ -205,23 +229,52 @@ export default function ReviewLinkPage() {
     
     setLogoUploading(true);
     try {
-      const storageRef = ref(storage, `logos/${currentUser.uid}/${file.name}`);
+      // Generate unique filename with UUID
+      const extension = file.name.split('.').pop();
+      const uniqueFilename = `${generateUUID()}.${extension}`;
+      
+      // Use organized storage path
+      const storageRef = ref(storage, `logos/${currentUser.uid}/${uniqueFilename}`);
+      
       await uploadBytes(storageRef, file);
       const url = await getDownloadURL(storageRef);
       setLogoImage(url);
+      
+      // Immediately update Firestore
+      await setDoc(
+        doc(db, "reviewPages", currentUser.uid),
+        { logoImage: url },
+        { merge: true }
+      );
     } catch (error) {
       console.error("Error uploading logo:", error);
     } finally {
       setLogoUploading(false);
     }
   }
-
-  const handleDeleteImage = () => {
-    setPreviewImage(null)
+  
+  const handleDeleteImage = async () => {
+    setPreviewImage(null);
+    if (currentUser) {
+      // Immediately update Firestore
+      await setDoc(
+        doc(db, "reviewPages", currentUser.uid),
+        { previewImage: null },
+        { merge: true }
+      );
+    }
   }
 
-  const handleDeleteLogo = () => {
-    setLogoImage(null)
+  const handleDeleteLogo = async () => {
+    setLogoImage(null);
+    if (currentUser) {
+      // Immediately update Firestore
+      await setDoc(
+        doc(db, "reviewPages", currentUser.uid),
+        { logoImage: null },
+        { merge: true }
+      );
+    }
   }
 
   const triggerFileInput = () => {
