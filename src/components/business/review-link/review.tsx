@@ -28,6 +28,7 @@ export default function ReviewPage() {
   const [previewImage, setPreviewImage] = useState<string | null>(null)
   const [logoImage, setLogoImage] = useState<string | null>(null)
   const [reviewLinkUrl, setReviewLinkUrl] = useState("")
+  const [googleReviewLink, setGoogleReviewLink] = useState("") // NEW: Google review link state
   const [isReviewGatingEnabled, setIsReviewGatingEnabled] = useState(true)
   const [rating, setRating] = useState(0)
   const [welcomeTitle, setWelcomeTitle] = useState("")
@@ -74,6 +75,16 @@ export default function ReviewPage() {
             setLogoImage(data.logoImage || null);
             setIsReviewGatingEnabled(data.isReviewGatingEnabled ?? true);
             setReviewLinkUrl(data.reviewLinkUrl || "");
+            setGoogleReviewLink(data.googleReviewLink || "") // NEW: Load Google review link
+          }
+
+          // NEW: Load Google review link from businessInfo
+          const userDocRef = doc(db, "users", user.uid);
+          const userDocSnap = await getDoc(userDocRef);
+          if (userDocSnap.exists()) {
+            const userData = userDocSnap.data();
+            const googleLink = userData.businessInfo?.googleReviewLink || "";
+            setGoogleReviewLink(googleLink);
           }
         } catch (error) {
           console.error("Error loading config:", error);
@@ -122,7 +133,12 @@ export default function ReviewPage() {
     
     // If review gating is disabled or rating is 4-5 stars
     if (!isReviewGatingEnabled || rating >= 4) {
-      window.open(reviewLinkUrl, "_blank")
+      // NEW: Use Google review link if available and rating >=4
+      const reviewUrl = rating >= 4 && googleReviewLink 
+        ? googleReviewLink 
+        : reviewLinkUrl;
+        
+      window.open(reviewUrl, "_blank")
       return
     }
 

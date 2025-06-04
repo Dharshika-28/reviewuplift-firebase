@@ -82,6 +82,7 @@ export default function ReviewLinkPage() {
   const [logoUploading, setLogoUploading] = useState(false)
   const [previewImageUploading, setPreviewImageUploading] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [googleReviewLink, setGoogleReviewLink] = useState("") // NEW: Google review link state
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
@@ -118,6 +119,15 @@ export default function ReviewLinkPage() {
             // New user - set default URL placeholder
             setReviewLinkUrl(`https://go.reviewuplift.com/your-business`);
             setTempBusinessSlug('your-business');
+          }
+
+          // NEW: Load Google review link from businessInfo
+          const userDocRef = doc(db, "users", user.uid);
+          const userDocSnap = await getDoc(userDocRef);
+          if (userDocSnap.exists()) {
+            const userData = userDocSnap.data();
+            const googleLink = userData.businessInfo?.googleReviewLink || "";
+            setGoogleReviewLink(googleLink);
           }
         } catch (error) {
           console.error("Error loading config:", error);
@@ -306,8 +316,10 @@ export default function ReviewLinkPage() {
       return
     }
 
+    // NEW: Use Google review link if available and rating >=4
     if (rating >= 4) {
-      window.open(reviewLinkUrl, "_blank")
+      const url = googleReviewLink || reviewLinkUrl;
+      window.open(url, "_blank")
       return
     }
 
