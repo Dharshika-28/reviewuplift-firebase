@@ -15,6 +15,7 @@ import { auth, db, storage } from "@/firebase/firebase"
 import { doc, getDoc, setDoc, serverTimestamp, collection, addDoc } from "firebase/firestore"
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage"
 import { onAuthStateChanged } from "firebase/auth"
+import { motion } from "framer-motion"
 
 // Add UUID generation function
 const generateUUID = () => {
@@ -206,13 +207,6 @@ export default function ReviewLinkPage() {
       await uploadBytes(storageRef, file);
       const url = await getDownloadURL(storageRef);
       setPreviewImage(url);
-      
-      // Immediately update Firestore
-      await setDoc(
-        doc(db, "reviewPages", currentUser.uid),
-        { previewImage: url },
-        { merge: true }
-      );
     } catch (error) {
       console.error("Error uploading image:", error);
     } finally {
@@ -236,13 +230,6 @@ export default function ReviewLinkPage() {
       await uploadBytes(storageRef, file);
       const url = await getDownloadURL(storageRef);
       setLogoImage(url);
-      
-      // Immediately update Firestore
-      await setDoc(
-        doc(db, "reviewPages", currentUser.uid),
-        { logoImage: url },
-        { merge: true }
-      );
     } catch (error) {
       console.error("Error uploading logo:", error);
     } finally {
@@ -252,26 +239,10 @@ export default function ReviewLinkPage() {
   
   const handleDeleteImage = async () => {
     setPreviewImage(null);
-    if (currentUser) {
-      // Immediately update Firestore
-      await setDoc(
-        doc(db, "reviewPages", currentUser.uid),
-        { previewImage: null },
-        { merge: true }
-      );
-    }
   }
 
   const handleDeleteLogo = async () => {
     setLogoImage(null);
-    if (currentUser) {
-      // Immediately update Firestore
-      await setDoc(
-        doc(db, "reviewPages", currentUser.uid),
-        { logoImage: null },
-        { merge: true }
-      );
-    }
   }
 
   const triggerFileInput = () => {
@@ -309,12 +280,15 @@ export default function ReviewLinkPage() {
         rating,
         businessName,
         createdAt: serverTimestamp(),
-        status: 'new',
+        status: 'pending',
         userId: currentUser.uid
       };
       
-      // Add to the negative_reviews collection
-      await addDoc(collection(db, "negative_reviews"), reviewData);
+      // Add to user-specific reviews collection
+      await addDoc(
+        collection(db, "users", currentUser.uid, "reviews"), 
+        reviewData
+      );
       
       setSubmitted(true);
       setSubmissionMessage("We're sorry to hear about your experience. Thank you for your feedback.");
@@ -388,7 +362,7 @@ export default function ReviewLinkPage() {
   if (loading) {
     return (
       <div className="flex min-h-screen bg-gray-50">
-        <Sidebar isAdmin={false} />
+        <Sidebar />
         <div className="flex-1 md:ml-64 p-8 flex items-center justify-center">
           <div className="text-center">
             <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-orange-500 mx-auto"></div>
@@ -401,542 +375,608 @@ export default function ReviewLinkPage() {
 
   return (
     <div className="flex min-h-screen bg-gray-50">
-      <Sidebar isAdmin={false} />
+      <Sidebar />
 
       <div className="flex-1 md:ml-64 p-8">
         <div className="max-w-6xl mx-auto">
-          <h1 className="text-3xl font-bold mb-6">Review Link</h1>
+          <motion.h1 
+            className="text-3xl font-bold mb-6 bg-gradient-to-r from-orange-600 to-orange-400 bg-clip-text text-transparent"
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5 }}
+          >
+            Review Link
+          </motion.h1>
           <p className="text-muted-foreground mb-8">
             Customize the behavior, text, and images of your Review Link.
           </p>
 
           <div className="grid lg:grid-cols-3 gap-8">
             <div className="lg:col-span-2 space-y-6">
-              <Card>
-                <CardHeader>
-                  <div className="flex justify-between items-center">
-                    <CardTitle>Edit Review Link URL</CardTitle>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={handleUrlEdit}
-                      aria-label={isEditingUrl ? "Save URL" : "Edit URL"}
-                    >
-                      <Edit className="h-4 w-4 mr-2" aria-hidden="true" />
-                      {isEditingUrl ? "Save" : "Edit"}
-                    </Button>
-                  </div>
-                  <CardDescription>This is the URL you'll share with customers to collect reviews</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {isEditingUrl ? (
-                    <div className="space-y-4">
-                      <div className="flex items-center">
-                        <span className="whitespace-nowrap mr-2">https://go.reviewuplift.com/</span>
-                        <Input
-                          value={tempBusinessSlug}
-                          onChange={(e) => setTempBusinessSlug(e.target.value)}
-                          aria-label="Review link business slug"
-                          className="flex-1"
-                          placeholder="your-business"
-                        />
-                      </div>
+              <motion.div
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ duration: 0.5, delay: 0.1 }}
+              >
+                <Card className="border-orange-200 shadow-lg transition-all hover:shadow-xl">
+                  <CardHeader className="bg-gradient-to-r from-orange-50 to-white rounded-t-lg">
+                    <div className="flex justify-between items-center">
+                      <CardTitle className="text-xl font-bold text-orange-800">Edit Review Link URL</CardTitle>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={handleUrlEdit}
+                        aria-label={isEditingUrl ? "Save URL" : "Edit URL"}
+                        className="group transition-all hover:bg-orange-100"
+                      >
+                        <Edit className="h-4 w-4 mr-2 group-hover:text-orange-600" aria-hidden="true" />
+                        {isEditingUrl ? "Save" : "Edit"}
+                      </Button>
                     </div>
-                  ) : (
-                    <div className="flex items-center justify-between bg-muted p-3 rounded">
-                      <div className="flex items-center">
-                        <span className="text-sm font-medium">{reviewLinkUrl}</span>
+                    <CardDescription>This is the URL you'll share with customers to collect reviews</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    {isEditingUrl ? (
+                      <div className="space-y-4">
+                        <div className="flex items-center">
+                          <span className="whitespace-nowrap mr-2">https://go.reviewuplift.com/</span>
+                          <Input
+                            value={tempBusinessSlug}
+                            onChange={(e) => setTempBusinessSlug(e.target.value)}
+                            aria-label="Review link business slug"
+                            className="flex-1 border-orange-200 focus:ring-2 focus:ring-orange-300"
+                            placeholder="your-business"
+                          />
+                        </div>
                       </div>
-                      <div className="flex space-x-2">
-                        <Button variant="outline" size="sm" asChild>
-                          <a
-                            href={reviewLinkUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            aria-label="Test review link in new window"
-                          >
-                            Test Link
-                          </a>
-                        </Button>
-                        <Button 
-                          variant="outline" 
-                          size="sm" 
-                          onClick={navigateToPreviewPage}
-                          aria-label="View full preview"
-                        >
-                          Preview
-                        </Button>
-                      </div>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle>Review Gating (Star Filter)</CardTitle>
-                  <CardDescription>
-                    When enabled, only customers with positive experiences (4-5 stars) will be directed to leave public
-                    reviews. Negative reviews will be collected privately.
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex items-center justify-between">
-                    <div className="space-y-0.5">
-                      <Label htmlFor="review-gating">{isReviewGatingEnabled ? "Enabled" : "Disabled"}</Label>
-                      {isReviewGatingEnabled ? (
-                        <p className="text-sm text-muted-foreground">
-                          Negative reviews will be sent to your feedback form
-                        </p>
-                      ) : (
-                        <p className="text-sm text-muted-foreground">
-                          All reviews will be sent to public review sites
-                        </p>
-                      )}
-                    </div>
-                    <Switch
-                      id="review-gating"
-                      checked={isReviewGatingEnabled}
-                      onCheckedChange={handleToggleReviewGating}
-                      aria-label="Toggle review gating"
-                    />
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <div className="flex justify-between items-center">
-                    <CardTitle>Preview Editor</CardTitle>
-                    <Button
-                      variant="outline"
-                      onClick={handlePreviewEdit}
-                      aria-label={isEditingPreview ? "Save preview" : "Edit preview"}
-                    >
-                      {isEditingPreview ? "Save Preview" : "Edit Preview"}
-                    </Button>
-                  </div>
-                  <CardDescription>Customize how your review collection page looks to customers</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {isEditingPreview ? (
-                    <div className="space-y-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="business-name">Business Name</Label>
-                        <Input
-                          id="business-name"
-                          value={tempBusinessName}
-                          onChange={(e) => setTempBusinessName(e.target.value)}
-                          aria-label="Business name"
-                          placeholder="Enter your business name"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="welcome-title">Welcome Title</Label>
-                        <Input
-                          id="welcome-title"
-                          value={tempWelcomeTitle}
-                          onChange={(e) => setTempWelcomeTitle(e.target.value)}
-                          aria-label="Welcome title"
-                          placeholder="Enter welcome title"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="welcome-text">Welcome Text</Label>
-                        <Textarea
-                          id="welcome-text"
-                          value={tempWelcomeText}
-                          onChange={(e) => setTempWelcomeText(e.target.value)}
-                          aria-label="Welcome text"
-                          placeholder="Enter welcome message"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="preview-text">Preview Text</Label>
-                        <Input
-                          id="preview-text"
-                          value={tempPreviewText}
-                          onChange={(e) => setTempPreviewText(e.target.value)}
-                          aria-label="Preview text"
-                          placeholder="Enter preview text"
-                        />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="business-image">Business Image</Label>
-                        <input
-                          type="file"
-                          ref={fileInputRef}
-                          onChange={handleImageUpload}
-                          accept="image/*"
-                          className="hidden"
-                          aria-label="Upload business image"
-                        />
-                        <div className="flex items-center gap-2">
+                    ) : (
+                      <div className="flex items-center justify-between bg-orange-50 p-3 rounded-lg border border-orange-100">
+                        <div className="flex items-center">
+                          <span className="text-sm font-medium">{reviewLinkUrl}</span>
+                        </div>
+                        <div className="flex space-x-2">
+                          <Button variant="outline" size="sm" asChild className="border-orange-200 hover:bg-orange-50">
+                            <a
+                              href={reviewLinkUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              aria-label="Test review link in new window"
+                            >
+                              Test Link
+                            </a>
+                          </Button>
                           <Button 
                             variant="outline" 
-                            onClick={triggerFileInput}
-                            disabled={previewImageUploading}
+                            size="sm" 
+                            onClick={navigateToPreviewPage}
+                            aria-label="View full preview"
+                            className="border-orange-200 hover:bg-orange-50"
+                          >
+                            Preview
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </motion.div>
+
+              <motion.div
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ duration: 0.5, delay: 0.2 }}
+              >
+                <Card className="border-orange-200 shadow-lg transition-all hover:shadow-xl">
+                  <CardHeader className="bg-gradient-to-r from-orange-50 to-white rounded-t-lg">
+                    <CardTitle className="text-xl font-bold text-orange-800">Review Gating (Star Filter)</CardTitle>
+                    <CardDescription>
+                      When enabled, only customers with positive experiences (4-5 stars) will be directed to leave public
+                      reviews. Negative reviews will be collected privately.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-0.5">
+                        <Label htmlFor="review-gating">{isReviewGatingEnabled ? "Enabled" : "Disabled"}</Label>
+                        {isReviewGatingEnabled ? (
+                          <p className="text-sm text-muted-foreground">
+                            Negative reviews will be sent to your feedback form
+                          </p>
+                        ) : (
+                          <p className="text-sm text-muted-foreground">
+                            All reviews will be sent to public review sites
+                          </p>
+                        )}
+                      </div>
+                      <Switch
+                        id="review-gating"
+                        checked={isReviewGatingEnabled}
+                        onCheckedChange={handleToggleReviewGating}
+                        aria-label="Toggle review gating"
+                        className="data-[state=checked]:bg-orange-500"
+                      />
+                    </div>
+                  </CardContent>
+                </Card>
+              </motion.div>
+
+              <motion.div
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ duration: 0.5, delay: 0.3 }}
+              >
+                <Card className="border-orange-200 shadow-lg transition-all hover:shadow-xl">
+                  <CardHeader className="bg-gradient-to-r from-orange-50 to-white rounded-t-lg">
+                    <div className="flex justify-between items-center">
+                      <CardTitle className="text-xl font-bold text-orange-800">Preview Editor</CardTitle>
+                      <Button
+                        variant="outline"
+                        onClick={handlePreviewEdit}
+                        aria-label={isEditingPreview ? "Save preview" : "Edit preview"}
+                        className="border-orange-200 hover:bg-orange-50"
+                      >
+                        {isEditingPreview ? "Save Preview" : "Edit Preview"}
+                      </Button>
+                    </div>
+                    <CardDescription>Customize how your review collection page looks to customers</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    {isEditingPreview ? (
+                      <div className="space-y-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="business-name">Business Name</Label>
+                          <Input
+                            id="business-name"
+                            value={tempBusinessName}
+                            onChange={(e) => setTempBusinessName(e.target.value)}
+                            aria-label="Business name"
+                            placeholder="Enter your business name"
+                            className="border-orange-200 focus:ring-2 focus:ring-orange-300"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="welcome-title">Welcome Title</Label>
+                          <Input
+                            id="welcome-title"
+                            value={tempWelcomeTitle}
+                            onChange={(e) => setTempWelcomeTitle(e.target.value)}
+                            aria-label="Welcome title"
+                            placeholder="Enter welcome title"
+                            className="border-orange-200 focus:ring-2 focus:ring-orange-300"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="welcome-text">Welcome Text</Label>
+                          <Textarea
+                            id="welcome-text"
+                            value={tempWelcomeText}
+                            onChange={(e) => setTempWelcomeText(e.target.value)}
+                            aria-label="Welcome text"
+                            placeholder="Enter welcome message"
+                            className="border-orange-200 focus:ring-2 focus:ring-orange-300"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="preview-text">Preview Text</Label>
+                          <Input
+                            id="preview-text"
+                            value={tempPreviewText}
+                            onChange={(e) => setTempPreviewText(e.target.value)}
+                            aria-label="Preview text"
+                            placeholder="Enter preview text"
+                            className="border-orange-200 focus:ring-2 focus:ring-orange-300"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="business-image">Business Image</Label>
+                          <input
+                            type="file"
+                            ref={fileInputRef}
+                            onChange={handleImageUpload}
+                            accept="image/*"
+                            className="hidden"
                             aria-label="Upload business image"
-                          >
-                            {previewImageUploading ? (
-                              <span className="flex items-center">
-                                <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-gray-700" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                </svg>
-                                Uploading...
-                              </span>
-                            ) : (
-                              <>
-                                <Upload className="h-4 w-4 mr-2" aria-hidden="true" />
-                                Upload Image
-                              </>
+                          />
+                          <div className="flex items-center gap-2">
+                            <Button 
+                              variant="outline" 
+                              onClick={triggerFileInput}
+                              disabled={previewImageUploading}
+                              aria-label="Upload business image"
+                              className="border-orange-200 hover:bg-orange-50"
+                            >
+                              {previewImageUploading ? (
+                                <span className="flex items-center">
+                                  <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-gray-700" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                  </svg>
+                                  Uploading...
+                                </span>
+                              ) : (
+                                <>
+                                  <Upload className="h-4 w-4 mr-2" aria-hidden="true" />
+                                  Upload Image
+                                </>
+                              )}
+                            </Button>
+                            {previewImage && (
+                              <Button 
+                                variant="outline" 
+                                size="sm" 
+                                onClick={handleDeleteImage}
+                                aria-label="Delete business image"
+                                className="border-orange-200 hover:bg-orange-50"
+                              >
+                                <Trash2 className="h-4 w-4 mr-2" aria-hidden="true" />
+                                Remove
+                              </Button>
                             )}
-                          </Button>
+                          </div>
                           {previewImage && (
-                            <Button 
-                              variant="outline" 
-                              size="sm" 
-                              onClick={handleDeleteImage}
-                              aria-label="Delete business image"
-                            >
-                              <Trash2 className="h-4 w-4 mr-2" aria-hidden="true" />
-                              Remove
-                            </Button>
+                            <div className="mt-2">
+                              <img
+                                src={previewImage}
+                                alt="Current business image"
+                                className="w-20 h-20 object-cover rounded-lg border border-orange-200 shadow-sm"
+                              />
+                            </div>
                           )}
                         </div>
-                        {previewImage && (
-                          <div className="mt-2">
-                            <img
-                              src={previewImage}
-                              alt="Current business image"
-                              className="w-20 h-20 object-cover rounded border"
-                            />
-                          </div>
-                        )}
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="business-logo">Business Logo</Label>
-                        <input
-                          type="file"
-                          ref={logoInputRef}
-                          onChange={handleLogoUpload}
-                          accept="image/*"
-                          className="hidden"
-                          aria-label="Upload business logo"
-                        />
-                        <div className="flex items-center gap-2">
-                          <Button 
-                            variant="outline" 
-                            onClick={triggerLogoInput}
-                            disabled={logoUploading}
+                        <div className="space-y-2">
+                          <Label htmlFor="business-logo">Business Logo</Label>
+                          <input
+                            type="file"
+                            ref={logoInputRef}
+                            onChange={handleLogoUpload}
+                            accept="image/*"
+                            className="hidden"
                             aria-label="Upload business logo"
-                          >
-                            {logoUploading ? (
-                              <span className="flex items-center">
-                                <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-gray-700" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                </svg>
-                                Uploading...
-                              </span>
-                            ) : (
-                              <>
-                                <Upload className="h-4 w-4 mr-2" aria-hidden="true" />
-                                Upload Logo
-                              </>
-                            )}
-                          </Button>
-                          {logoImage && (
+                          />
+                          <div className="flex items-center gap-2">
                             <Button 
                               variant="outline" 
-                              size="sm" 
-                              onClick={handleDeleteLogo}
-                              aria-label="Delete business logo"
+                              onClick={triggerLogoInput}
+                              disabled={logoUploading}
+                              aria-label="Upload business logo"
+                              className="border-orange-200 hover:bg-orange-50"
                             >
-                              <Trash2 className="h-4 w-4 mr-2" aria-hidden="true" />
-                              Remove
+                              {logoUploading ? (
+                                <span className="flex items-center">
+                                  <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-gray-700" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                  </svg>
+                                  Uploading...
+                                </span>
+                              ) : (
+                                <>
+                                  <Upload className="h-4 w-4 mr-2" aria-hidden="true" />
+                                  Upload Logo
+                                </>
+                              )}
                             </Button>
+                            {logoImage && (
+                              <Button 
+                                variant="outline" 
+                                size="sm" 
+                                onClick={handleDeleteLogo}
+                                aria-label="Delete business logo"
+                                className="border-orange-200 hover:bg-orange-50"
+                              >
+                                <Trash2 className="h-4 w-4 mr-2" aria-hidden="true" />
+                                Remove
+                              </Button>
+                            )}
+                          </div>
+                          {logoImage && (
+                            <div className="mt-2">
+                              <img
+                                src={logoImage}
+                                alt="Current business logo"
+                                className="w-20 h-20 object-contain rounded-lg border border-orange-200 shadow-sm"
+                              />
+                            </div>
                           )}
                         </div>
-                        {logoImage && (
-                          <div className="mt-2">
-                            <img
-                              src={logoImage}
-                              alt="Current business logo"
-                              className="w-20 h-20 object-contain rounded border"
-                            />
-                          </div>
-                        )}
                       </div>
-                    </div>
-                  ) : (
-                    <div className="text-center">
-                      <p className="text-sm text-muted-foreground">
-                        Click "Edit Preview" to customize your review collection page
-                      </p>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
+                    ) : (
+                      <div className="text-center">
+                        <p className="text-sm text-muted-foreground">
+                          Click "Edit Preview" to customize your review collection page
+                        </p>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </motion.div>
             </div>
 
             <div className="lg:col-span-1">
               <div className="sticky top-8">
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Live Preview</CardTitle>
-                    <CardDescription>How customers will see your review page</CardDescription>
-                  </CardHeader>
-                  <CardContent className="p-0">
-                    <div 
-                      className="w-full bg-white rounded-lg shadow-sm overflow-hidden flex flex-col"
-                      style={{ maxHeight: 'calc(100vh - 200px)' }}
-                    >
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.5, delay: 0.4 }}
+                >
+                  <Card className="border-orange-200 shadow-lg transition-all hover:shadow-xl">
+                    <CardHeader className="bg-gradient-to-r from-orange-50 to-white rounded-t-lg">
+                      <CardTitle className="text-xl font-bold text-orange-800">Live Preview</CardTitle>
+                      <CardDescription>How customers will see your review page</CardDescription>
+                    </CardHeader>
+                    <CardContent className="p-0">
                       <div 
-                        ref={previewRef}
-                        className="overflow-y-auto"
+                        className="w-full bg-white rounded-lg shadow-sm overflow-hidden flex flex-col"
+                        style={{ maxHeight: 'calc(100vh - 200px)' }}
                       >
-                        <div className="w-full bg-gradient-to-b from-orange-50 to-orange-100 relative overflow-hidden">
-                          <div className="absolute inset-0 opacity-10 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxnIGZpbGw9IiNGRjk4MDAiIGZpbGwtb3BhY2l0eT0iMC40Ij48cGF0aCBkPSJNMCAwYzExLjA0NiAwIDIwIDguOTU4IDIwIDIwSDBWMHoiLz48cGF0aCBkPSJNNDAgNDBjLTExLjA0NiAwLTIwLTguOTU0LTIwLTIwSDB2MjBjMCAxMS4wNDYgOC45NTQgMjAgMjAgMjB6Ii8+PC9nPjwvZz48L3N2Zz4=')]"></div>
-                          <div className="relative h-full flex flex-col justify-center items-center p-6">
-                            {previewImage ? (
-                              <div className="w-full max-w-xs aspect-square rounded-2xl overflow-hidden shadow-2xl">
-                                <img
-                                  src={previewImage}
-                                  alt={businessName}
-                                  className="w-full h-full object-cover transition-transform duration-500 hover:scale-105"
-                                />
+                        <div 
+                          ref={previewRef}
+                          className="overflow-y-auto"
+                        >
+                          <div className="w-full bg-gradient-to-b from-orange-50 to-orange-100 relative overflow-hidden">
+                            <div className="absolute inset-0 opacity-10 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxnIGZpbGw9IiNGRjk4MDAiIGZpbGwtb3BhY2l0eT0iMC40Ij48cGF0aCBkPSJNMCAwYzExLjA0NiAwIDIwIDguOTU4IDIwIDIwSDBWMHoiLz48cGF0aCBkPSJNNDAgNDBjLTExLjA0NiAwLTIwLTguOTU0LTIwLTIwSDB2MjBjMCAxMS4wNDYgOC45NTQgMjAgMjAgMjB6Ii8+PC9nPjwvZz48L3N2Zz4=')]"></div>
+                            <div className="relative h-full flex flex-col justify-center items-center p-6">
+                              {previewImage ? (
+                                <motion.div 
+                                  className="w-full max-w-xs aspect-square rounded-2xl overflow-hidden shadow-2xl"
+                                  whileHover={{ scale: 1.05 }}
+                                  transition={{ duration: 0.3 }}
+                                >
+                                  <img
+                                    src={previewImage}
+                                    alt={businessName}
+                                    className="w-full h-full object-cover"
+                                  />
+                                </motion.div>
+                              ) : (
+                                <motion.div 
+                                  className="w-full max-w-xs aspect-square rounded-2xl bg-white shadow-2xl flex items-center justify-center"
+                                  whileHover={{ scale: 1.05 }}
+                                  transition={{ duration: 0.3 }}
+                                >
+                                  <div className="text-center p-6">
+                                    <Mountain className="h-16 w-16 mx-auto text-orange-500 mb-4" />
+                                    <h3 className="text-xl font-bold text-gray-800">{businessName || "Your Business"}</h3>
+                                  </div>
+                                </motion.div>
+                              )}
+                              <div className="mt-6 text-center max-w-xs">
+                                <h3 className="text-2xl font-bold text-gray-800 mb-3">{welcomeTitle || "We value your opinion!"}</h3>
+                                <p className="text-gray-600">
+                                  {welcomeText || "Share your experience and help us improve"}
+                                </p>
                               </div>
-                            ) : (
-                              <div className="w-full max-w-xs aspect-square rounded-2xl bg-white shadow-2xl flex items-center justify-center">
-                                <div className="text-center p-6">
-                                  <Mountain className="h-16 w-16 mx-auto text-orange-500 mb-4" />
-                                  <h3 className="text-xl font-bold text-gray-800">{businessName || "Your Business"}</h3>
+                            </div>
+                          </div>
+
+                          <div className="w-full bg-white p-6 flex flex-col justify-center">
+                            <div className="max-w-xs mx-auto w-full">
+                              {submitted ? (
+                                <div className="text-center space-y-4">
+                                  <div className="p-4 rounded-lg bg-gray-50 border border-gray-200">
+                                    <p className="text-gray-700 font-medium">
+                                      {submissionMessage}
+                                    </p>
+                                  </div>
+                                  <Button 
+                                    onClick={resetForm}
+                                    variant="outline"
+                                    className="border-orange-200 hover:bg-orange-50"
+                                  >
+                                    Leave Another Review
+                                  </Button>
                                 </div>
-                              </div>
-                            )}
-                            <div className="mt-6 text-center max-w-xs">
-                              <h3 className="text-2xl font-bold text-gray-800 mb-3">{welcomeTitle || "We value your opinion!"}</h3>
-                              <p className="text-gray-600">
-                                {welcomeText || "Share your experience and help us improve"}
+                              ) : (
+                                <>
+                                  {logoImage && (
+                                    <div className="flex justify-center mb-4">
+                                      <img 
+                                        src={logoImage} 
+                                        alt={`${businessName} Logo`} 
+                                        className="h-16 object-contain"
+                                      />
+                                    </div>
+                                  )}
+                                  <div className="text-center mb-6">
+                                    <h2 className="text-2xl font-bold text-gray-800 mb-2">Rate Your Experience</h2>
+                                    <p className="text-gray-600">{previewText || "How was your experience?"}</p>
+                                  </div>
+
+                                  <div className="mb-6">
+                                    <div className="flex justify-center space-x-1 mb-4">
+                                      {[1, 2, 3, 4, 5].map((star) => (
+                                        <motion.button
+                                          key={star}
+                                          onClick={() => setRating(star)}
+                                          onMouseEnter={() => setHoveredStar(star)}
+                                          onMouseLeave={() => setHoveredStar(0)}
+                                          className={`p-1 rounded-full transition-all ${
+                                            star <= (hoveredStar || rating) ? 'bg-orange-50' : 'hover:bg-gray-50'
+                                          }`}
+                                          whileHover={{ scale: 1.1 }}
+                                          whileTap={{ scale: 0.9 }}
+                                        >
+                                          <Star
+                                            className={`h-8 w-8 ${
+                                              star <= (hoveredStar || rating)
+                                                ? 'fill-yellow-400 text-yellow-400'
+                                                : 'text-gray-300'
+                                            }`}
+                                          />
+                                        </motion.button>
+                                      ))}
+                                    </div>
+
+                                    <div className="flex justify-between text-xs text-gray-500 mb-2">
+                                      <span>Not satisfied</span>
+                                      <span>Very satisfied</span>
+                                    </div>
+
+                                    {rating > 0 && (
+                                      <motion.div 
+                                        className={`mt-4 p-3 rounded-lg bg-gray-50 border border-gray-200`}
+                                        initial={{ opacity: 0, height: 0 }}
+                                        animate={{ opacity: 1, height: 'auto' }}
+                                        transition={{ duration: 0.3 }}
+                                      >
+                                        <p className="text-gray-700 font-medium text-center flex items-center justify-center text-sm">
+                                          {rating >= 4 ? (
+                                            <>
+                                              <ThumbsUp className="mr-2 text-green-500 h-4 w-4" />
+                                              We're glad you enjoyed your meal!
+                                            </>
+                                          ) : (
+                                            <>
+                                              <ThumbsDown className="mr-2 text-orange-500 h-4 w-4" />
+                                              We're sorry to hear that. We'll use your feedback to improve.
+                                            </>
+                                          )}
+                                        </p>
+                                      </motion.div>
+                                    )}
+                                  </div>
+
+                                  {showForm && rating <= 3 && isReviewGatingEnabled && (
+                                    <motion.div 
+                                      className="mb-4 space-y-3"
+                                      initial={{ opacity: 0, height: 0 }}
+                                      animate={{ opacity: 1, height: 'auto' }}
+                                      transition={{ duration: 0.3 }}
+                                    >
+                                      <div>
+                                        <label htmlFor="name" className="block text-xs font-medium text-gray-700 mb-1">
+                                          Your Name <span className="text-red-500">*</span>
+                                        </label>
+                                        <input
+                                          type="text"
+                                          id="name"
+                                          name="name"
+                                          value={formData.name}
+                                          onChange={handleInputChange}
+                                          className={`w-full px-3 py-1.5 text-sm border rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 ${
+                                            formErrors.name ? 'border-red-500' : 'border-gray-300'
+                                          }`}
+                                          required
+                                        />
+                                        {formErrors.name && (
+                                          <p className="mt-1 text-xs text-red-500">This field is required</p>
+                                        )}
+                                      </div>
+
+                                      <div>
+                                        <label htmlFor="phone" className="block text-xs font-medium text-gray-700 mb-1">
+                                          Phone Number <span className="text-red-500">*</span>
+                                        </label>
+                                        <input
+                                          type="tel"
+                                          id="phone"
+                                          name="phone"
+                                          value={formData.phone}
+                                          onChange={handleInputChange}
+                                          className={`w-full px-3 py-1.5 text-sm border rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 ${
+                                            formErrors.phone ? 'border-red-500' : 'border-gray-300'
+                                          }`}
+                                          required
+                                        />
+                                        {formErrors.phone && (
+                                          <p className="mt-1 text-xs text-red-500">This field is required</p>
+                                        )}
+                                      </div>
+
+                                      <div>
+                                        <label htmlFor="email" className="block text-xs font-medium text-gray-700 mb-1">
+                                          Email Address <span className="text-red-500">*</span>
+                                        </label>
+                                        <input
+                                          type="email"
+                                          id="email"
+                                          name="email"
+                                          value={formData.email}
+                                          onChange={handleInputChange}
+                                          className={`w-full px-3 py-1.5 text-sm border rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 ${
+                                            formErrors.email ? 'border-red-500' : 'border-gray-300'
+                                          }`}
+                                          required
+                                        />
+                                        {formErrors.email && (
+                                          <p className="mt-1 text-xs text-red-500">This field is required</p>
+                                        )}
+                                      </div>
+                                      <div>
+                                        <label htmlFor="name" className="block text-xs font-medium text-gray-700 mb-1">
+                                          Branch Name <span className="text-red-500">*</span>
+                                        </label>
+                                        <input
+                                          type="text"
+                                          id="branchname"
+                                          name="branchname"
+                                          value={formData.branchname}
+                                          onChange={handleInputChange}
+                                          className={`w-full px-3 py-1.5 text-sm border rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 ${
+                                            formErrors.branchname ? 'border-red-500' : 'border-gray-300'
+                                          }`}
+                                          required
+                                        />
+                                        {formErrors.branchname && (
+                                          <p className="mt-1 text-xs text-red-500">This field is required</p>
+                                        )}
+                                      </div>
+
+                                      <div>
+                                        <label htmlFor="review" className="block text-xs font-medium text-gray-700 mb-1">
+                                          Your Review <span className="text-red-500">*</span>
+                                        </label>
+                                        <textarea
+                                          id="review"
+                                          name="review"
+                                          rows={2}
+                                          value={formData.review}
+                                          onChange={handleInputChange}
+                                          className={`w-full px-3 py-1.5 text-sm border rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 ${
+                                            formErrors.review ? 'border-red-500' : 'border-gray-300'
+                                          }`}
+                                          required
+                                        ></textarea>
+                                        {formErrors.review && (
+                                          <p className="mt-1 text-xs text-red-500">This field is required</p>
+                                        )}
+                                      </div>
+                                    </motion.div>
+                                  )}
+
+                                  <motion.button
+                                    onClick={handleLeaveReview}
+                                    disabled={rating === 0}
+                                    className={`
+                                      w-full py-3 px-4 rounded-lg font-medium text-white flex items-center justify-center
+                                      transition-all duration-300 text-sm
+                                      ${rating === 0
+                                        ? 'bg-gray-300 cursor-not-allowed'
+                                        : 'bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 shadow-md hover:shadow-lg'
+                                      }
+                                    `}
+                                    whileHover={{ scale: rating === 0 ? 1 : 1.02 }}
+                                    whileTap={{ scale: rating === 0 ? 1 : 0.98 }}
+                                  >
+                                    {rating > 0 ? 
+                                      (rating >= 4 ? 'Continue to Review' : 
+                                      (showForm ? 'Submit Your Feedback' : 'Continue to Feedback')) : 
+                                      'Select a Rating to Continue'}
+                                    <ChevronRight className="ml-2 h-4 w-4" />
+                                  </motion.button>
+                                </>
+                              )}
+
+                              <p className="text-xs text-gray-400 mt-4 text-center">
+                                Powered by <span className="font-medium">ReviewUplift</span>
                               </p>
                             </div>
                           </div>
                         </div>
-
-                        <div className="w-full bg-white p-6 flex flex-col justify-center">
-                          <div className="max-w-xs mx-auto w-full">
-                            {submitted ? (
-                              <div className="text-center space-y-4">
-                                <div className="p-4 rounded-lg bg-gray-50 border border-gray-200">
-                                  <p className="text-gray-700 font-medium">
-                                    {submissionMessage}
-                                  </p>
-                                </div>
-                                <Button 
-                                  onClick={resetForm}
-                                  variant="outline"
-                                >
-                                  Leave Another Review
-                                </Button>
-                              </div>
-                            ) : (
-                              <>
-                                {logoImage && (
-                                  <div className="flex justify-center mb-4">
-                                    <img 
-                                      src={logoImage} 
-                                      alt={`${businessName} Logo`} 
-                                      className="h-16 object-contain"
-                                    />
-                                  </div>
-                                )}
-                                <div className="text-center mb-6">
-                                  <h2 className="text-2xl font-bold text-gray-800 mb-2">Rate Your Experience</h2>
-                                  <p className="text-gray-600">{previewText || "How was your experience?"}</p>
-                                </div>
-
-                                <div className="mb-6">
-                                  <div className="flex justify-center space-x-1 mb-4">
-                                    {[1, 2, 3, 4, 5].map((star) => (
-                                      <button
-                                        key={star}
-                                        onClick={() => setRating(star)}
-                                        onMouseEnter={() => setHoveredStar(star)}
-                                        onMouseLeave={() => setHoveredStar(0)}
-                                        className={`p-1 rounded-full transition-all ${
-                                          star <= (hoveredStar || rating) ? 'bg-orange-50' : 'hover:bg-gray-50'
-                                        }`}
-                                      >
-                                        <Star
-                                          className={`h-8 w-8 ${
-                                            star <= (hoveredStar || rating)
-                                              ? 'fill-yellow-400 text-yellow-400'
-                                              : 'text-gray-300'
-                                          }`}
-                                        />
-                                      </button>
-                                    ))}
-                                  </div>
-
-                                  <div className="flex justify-between text-xs text-gray-500 mb-2">
-                                    <span>Not satisfied</span>
-                                    <span>Very satisfied</span>
-                                  </div>
-
-                                  {rating > 0 && (
-                                    <div className={`mt-4 p-3 rounded-lg bg-gray-50 border border-gray-200`}>
-                                      <p className="text-gray-700 font-medium text-center flex items-center justify-center text-sm">
-                                        {rating >= 4 ? (
-                                          <>
-                                            <ThumbsUp className="mr-2 text-green-500 h-4 w-4" />
-                                            We're glad you enjoyed your meal!
-                                          </>
-                                        ) : (
-                                          <>
-                                            <ThumbsDown className="mr-2 text-orange-500 h-4 w-4" />
-                                            We're sorry to hear that. We'll use your feedback to improve.
-                                          </>
-                                        )}
-                                      </p>
-                                    </div>
-                                  )}
-                                </div>
-
-                                {showForm && rating <= 3 && isReviewGatingEnabled && (
-                                  <div className="mb-4 space-y-3">
-                                    <div>
-                                      <label htmlFor="name" className="block text-xs font-medium text-gray-700 mb-1">
-                                        Your Name <span className="text-red-500">*</span>
-                                      </label>
-                                      <input
-                                        type="text"
-                                        id="name"
-                                        name="name"
-                                        value={formData.name}
-                                        onChange={handleInputChange}
-                                        className={`w-full px-3 py-1.5 text-sm border rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 ${
-                                          formErrors.name ? 'border-red-500' : 'border-gray-300'
-                                        }`}
-                                        required
-                                      />
-                                      {formErrors.name && (
-                                        <p className="mt-1 text-xs text-red-500">This field is required</p>
-                                      )}
-                                    </div>
-
-                                    <div>
-                                      <label htmlFor="phone" className="block text-xs font-medium text-gray-700 mb-1">
-                                        Phone Number <span className="text-red-500">*</span>
-                                      </label>
-                                      <input
-                                        type="tel"
-                                        id="phone"
-                                        name="phone"
-                                        value={formData.phone}
-                                        onChange={handleInputChange}
-                                        className={`w-full px-3 py-1.5 text-sm border rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 ${
-                                          formErrors.phone ? 'border-red-500' : 'border-gray-300'
-                                        }`}
-                                        required
-                                      />
-                                      {formErrors.phone && (
-                                        <p className="mt-1 text-xs text-red-500">This field is required</p>
-                                      )}
-                                    </div>
-
-                                    <div>
-                                      <label htmlFor="email" className="block text-xs font-medium text-gray-700 mb-1">
-                                        Email Address <span className="text-red-500">*</span>
-                                      </label>
-                                      <input
-                                        type="email"
-                                        id="email"
-                                        name="email"
-                                        value={formData.email}
-                                        onChange={handleInputChange}
-                                        className={`w-full px-3 py-1.5 text-sm border rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 ${
-                                          formErrors.email ? 'border-red-500' : 'border-gray-300'
-                                        }`}
-                                        required
-                                      />
-                                      {formErrors.email && (
-                                        <p className="mt-1 text-xs text-red-500">This field is required</p>
-                                      )}
-                                    </div>
-                                     <div>
-                                      <label htmlFor="name" className="block text-xs font-medium text-gray-700 mb-1">
-                                        Branch Name <span className="text-red-500">*</span>
-                                      </label>
-                                      <input
-                                        type="text"
-                                        id="branchname"
-                                        name="branchname"
-                                        value={formData.branchname}
-                                        onChange={handleInputChange}
-                                        className={`w-full px-3 py-1.5 text-sm border rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 ${
-                                          formErrors.branchname ? 'border-red-500' : 'border-gray-300'
-                                        }`}
-                                        required
-                                      />
-                                      {formErrors.branchname && (
-                                        <p className="mt-1 text-xs text-red-500">This field is required</p>
-                                      )}
-                                    </div>
-
-                                    <div>
-                                      <label htmlFor="review" className="block text-xs font-medium text-gray-700 mb-1">
-                                        Your Review <span className="text-red-500">*</span>
-                                      </label>
-                                      <textarea
-                                        id="review"
-                                        name="review"
-                                        rows={2}
-                                        value={formData.review}
-                                        onChange={handleInputChange}
-                                        className={`w-full px-3 py-1.5 text-sm border rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 ${
-                                          formErrors.review ? 'border-red-500' : 'border-gray-300'
-                                        }`}
-                                        required
-                                      ></textarea>
-                                      {formErrors.review && (
-                                        <p className="mt-1 text-xs text-red-500">This field is required</p>
-                                      )}
-                                    </div>
-                                  </div>
-                                )}
-
-                                <button
-                                  onClick={handleLeaveReview}
-                                  disabled={rating === 0}
-                                  className={`
-                                    w-full py-3 px-4 rounded-lg font-medium text-white flex items-center justify-center
-                                    transition-all duration-300 text-sm
-                                    ${rating === 0
-                                      ? 'bg-gray-300 cursor-not-allowed'
-                                      : 'bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 shadow-md hover:shadow-lg'
-                                    }
-                                  `}
-                                >
-                                  {rating > 0 ? 
-                                    (rating >= 4 ? 'Continue to Review' : 
-                                     (showForm ? 'Submit Your Feedback' : 'Continue to Feedback')) : 
-                                    'Select a Rating to Continue'}
-                                  <ChevronRight className="ml-2 h-4 w-4" />
-                                </button>
-                              </>
-                            )}
-
-                            <p className="text-xs text-gray-400 mt-4 text-center">
-                              Powered by <span className="font-medium">ReviewUplift</span>
-                            </p>
-                          </div>
-                        </div>
                       </div>
-                    </div>
-                  </CardContent>
-                </Card>
+                    </CardContent>
+                  </Card>
+                </motion.div>
               </div>
             </div>
           </div>

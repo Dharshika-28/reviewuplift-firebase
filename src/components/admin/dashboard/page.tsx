@@ -1,24 +1,115 @@
 "use client"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { SimpleAdminLayout } from "@/components/simple-admin-layout"
-import { Users, Star, MessageSquare, Building2 } from "lucide-react"
+import { Users, Star, MessageSquare, Building2, Badge } from "lucide-react"
 import { motion } from "framer-motion"
+import { useEffect, useState } from "react"
+import { collection, getDocs } from "firebase/firestore"
+import { db } from "@/firebase/firebase"
+import { format } from "date-fns"
+
+interface BusinessUser {
+  uid: string;
+  displayName: string;
+  email: string;
+  createdAt: Date;
+  businessName?: string;
+  role: string;
+  status: string;
+}
+
+interface Review {
+  rating: number;
+}
 
 export default function AdminDashboard() {
-  const stats = [
-    { title: "Total Businesses", value: "156", icon: Building2, color: "text-orange-600", bg: "bg-orange-100" },
-    { title: "Total Reviews", value: "2,847", icon: MessageSquare, color: "text-orange-600", bg: "bg-orange-100" },
-    { title: "Average Rating", value: "4.2", icon: Star, color: "text-orange-600", bg: "bg-orange-100" },
-    { title: "Total Users", value: "1,234", icon: Users, color: "text-orange-600", bg: "bg-orange-100" },
-  ]
+  const [stats, setStats] = useState({
+    totalBusinesses: 0,
+    totalReviews: 0,
+    averageRating: 0,
+    totalUsers: 0
+  })
+  
+  const [recentLogins, setRecentLogins] = useState<BusinessUser[]>([])
+  const [loading, setLoading] = useState(true)
 
-  const recentLogins = [
-    { business: "Pizza Palace", owner: "John Smith", time: "2 min ago", email: "john@pizzapalace.com" },
-    { business: "Tech Solutions", owner: "Sarah Johnson", time: "15 min ago", email: "sarah@techsolutions.com" },
-    { business: "Coffee Corner", owner: "Mike Davis", time: "1 hour ago", email: "mike@coffeecorner.com" },
-    { business: "Auto Repair Pro", owner: "Lisa Wilson", time: "2 hours ago", email: "lisa@autorepairpro.com" },
-    { business: "Beauty Salon", owner: "Emma Brown", time: "3 hours ago", email: "emma@beautysalon.com" },
-  ]
+  // Fetch business users and calculate stats
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        // Fetch all users
+        const usersCollection = collection(db, "users")
+        const usersSnapshot = await getDocs(usersCollection)
+        
+        const allUsers: BusinessUser[] = []
+        let businessUsers: BusinessUser[] = []
+        let totalReviews = 0
+        let totalRating = 0
+        let reviewCount = 0
+        
+        for (const userDoc of usersSnapshot.docs) {
+          const userData = userDoc.data()
+          const createdAt = userData.createdAt?.toDate() || new Date()
+          
+          const user = {
+            uid: userDoc.id,
+            displayName: userData.displayName || "Unknown",
+            email: userData.email || "No email",
+            createdAt,
+            businessName: userData.businessInfo?.businessName,
+            role: userData.role || "BUSER",
+            status: userData.status || "Pending"
+          }
+          
+          allUsers.push(user)
+          
+          // Only process business users for reviews
+          if (user.role === "BUSER") {
+            businessUsers.push(user)
+            
+            // Fetch reviews for this user
+            const reviewsCollection = collection(db, "users", userDoc.id, "reviews")
+            const reviewsSnapshot = await getDocs(reviewsCollection)
+            
+            const userReviewCount = reviewsSnapshot.size
+            reviewCount += userReviewCount
+            totalReviews += userReviewCount
+            
+            // Calculate ratings
+            reviewsSnapshot.forEach(reviewDoc => {
+              const reviewData = reviewDoc.data() as Review
+              totalRating += reviewData.rating || 0
+            })
+          }
+        }
+        
+        // Calculate stats
+        const totalBusinesses = businessUsers.length
+        const averageRating = reviewCount > 0 ? 
+          parseFloat((totalRating / reviewCount).toFixed(1)) : 0
+        
+        // Sort by most recent
+        const sortedUsers = [...businessUsers]
+          .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+          .slice(0, 5)
+        
+        setStats({
+          totalBusinesses,
+          totalReviews,
+          averageRating,
+          totalUsers: allUsers.length
+        })
+        
+        setRecentLogins(sortedUsers)
+      } catch (error) {
+        console.error("Error fetching dashboard data:", error)
+      } finally {
+        setLoading(false)
+      }
+    }
+    
+    fetchData()
+  }, [])
 
   // Animation variants
   const container = {
@@ -35,6 +126,60 @@ export default function AdminDashboard() {
     hidden: { opacity: 0, y: 20 },
     show: { opacity: 1, y: 0, transition: { duration: 0.5 } }
   }
+
+  const formatTimeAgo = (date: Date) => {
+    const now = new Date()
+    const diffMs = now.getTime() - date.getTime()
+    const diffMins = Math.floor(diffMs / 60000)
+    const diffHours = Math.floor(diffMs / 3600000)
+    const diffDays = Math.floor(diffMs / 86400000)
+    
+    if (diffMins < 1) return "Just now"
+    if (diffMins < 60) return `${diffMins} min ago`
+    if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`
+    return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`
+  }
+
+  if (loading) {
+    return (
+      <SimpleAdminLayout>
+        <div className="flex justify-center items-center h-screen">
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-orange-500"></div>
+        </div>
+      </SimpleAdminLayout>
+    )
+  }
+
+  const statsData = [
+    { 
+      title: "Total Businesses", 
+      value: stats.totalBusinesses, 
+      icon: Building2, 
+      color: "text-orange-600", 
+      bg: "bg-orange-100" 
+    },
+    { 
+      title: "Total Reviews", 
+      value: stats.totalReviews, 
+      icon: MessageSquare, 
+      color: "text-orange-600", 
+      bg: "bg-orange-100" 
+    },
+    { 
+      title: "Average Rating", 
+      value: stats.averageRating, 
+      icon: Star, 
+      color: "text-orange-600", 
+      bg: "bg-orange-100" 
+    },
+    { 
+      title: "Total Users", 
+      value: stats.totalUsers, 
+      icon: Users, 
+      color: "text-orange-600", 
+      bg: "bg-orange-100" 
+    },
+  ]
 
   return (
     <SimpleAdminLayout>
@@ -57,7 +202,7 @@ export default function AdminDashboard() {
           initial="hidden"
           animate="show"
         >
-          {stats.map((stat, index) => (
+          {statsData.map((stat, index) => (
             <motion.div key={index} variants={item}>
               <Card 
                 className={`border border-orange-200 shadow-md transition-all hover:shadow-xl hover:-translate-y-1 ${stat.bg}`}
@@ -89,27 +234,40 @@ export default function AdminDashboard() {
             </CardHeader>
             <CardContent className="p-4">
               <div className="space-y-3">
-                {recentLogins.map((login, index) => (
+                {recentLogins.map((login) => (
                   <motion.div 
-                    key={index}
+                    key={login.uid}
                     className="flex items-center justify-between p-3 rounded-lg hover:bg-orange-50 transition-all duration-200 border-b border-orange-100 last:border-b-0"
                     whileHover={{ scale: 1.01 }}
                     transition={{ duration: 0.1 }}
                   >
                     <div className="flex items-center space-x-3">
-                      <div className="w-3 h-3 bg-orange-500 rounded-full animate-pulse"></div>
+                      <div className={`w-3 h-3 rounded-full animate-pulse ${
+                        login.status === "Active" ? "bg-green-500" : 
+                        login.status === "Pending" ? "bg-yellow-500" : 
+                        "bg-red-500"
+                      }`}></div>
                       <div>
                         <p className="font-medium group">
                           <span className="group-hover:text-orange-600 transition-colors">
-                            {login.business}
+                            {login.businessName || "Unnamed Business"}
                           </span>
                         </p>
-                        <p className="text-sm text-gray-500">{login.owner}</p>
+                        <p className="text-sm text-gray-500">{login.displayName}</p>
                       </div>
                     </div>
                     <div className="text-right">
                       <p className="text-sm text-gray-600">{login.email}</p>
-                      <p className="text-xs text-orange-500 font-medium">{login.time}</p>
+                      <p className="text-xs text-orange-500 font-medium">
+                        {formatTimeAgo(login.createdAt)}
+                      </p>
+                      <Badge className={`mt-1 ${
+                        login.status === "Active" ? "bg-green-100 text-green-800" : 
+                        login.status === "Pending" ? "bg-yellow-100 text-yellow-800" : 
+                        "bg-red-100 text-red-800"
+                      }`}>
+                        {login.status}
+                      </Badge>
                     </div>
                   </motion.div>
                 ))}

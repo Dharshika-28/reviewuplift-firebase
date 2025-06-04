@@ -1,80 +1,95 @@
 "use client"
-
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { SimpleAdminLayout } from "@/components/simple-admin-layout"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Search, Star } from "lucide-react"
+import { collection, getDocs } from "firebase/firestore"
+import { db } from "@/firebase/firebase"
+import { format } from "date-fns"
+
+interface BusinessUser {
+  uid: string;
+  displayName: string;
+  email: string;
+  createdAt: Date;
+  businessName: string;
+  category: string;
+  status: string;
+  rating: number;
+  reviewCount: number;
+}
 
 export default function BusinessesPage() {
   const [searchQuery, setSearchQuery] = useState("")
-  const [isLoading, setIsLoading] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
+  const [businesses, setBusinesses] = useState<BusinessUser[]>([])
 
-  const businesses = [
-    {
-      id: 1,
-      name: "Pizza Palace",
-      owner: "John Smith",
-      email: "john@pizzapalace.com",
-      category: "Restaurant",
-      rating: 4.5,
-      reviews: 127,
-      status: "Active",
-      joined: "Jan 15, 2024",
-    },
-    {
-      id: 2,
-      name: "Tech Solutions",
-      owner: "Sarah Johnson",
-      email: "sarah@techsolutions.com",
-      category: "Technology",
-      rating: 4.8,
-      reviews: 89,
-      status: "Active",
-      joined: "Feb 3, 2024",
-    },
-    {
-      id: 3,
-      name: "Coffee Corner",
-      owner: "Mike Davis",
-      email: "mike@coffeecorner.com",
-      category: "Cafe",
-      rating: 4.2,
-      reviews: 203,
-      status: "Pending",
-      joined: "Mar 10, 2024",
-    },
-    {
-      id: 4,
-      name: "Auto Repair Pro",
-      owner: "Lisa Wilson",
-      email: "lisa@autorepairpro.com",
-      category: "Automotive",
-      rating: 4.6,
-      reviews: 156,
-      status: "Active",
-      joined: "Jan 28, 2024",
-    },
-    {
-      id: 5,
-      name: "Beauty Salon",
-      owner: "Emma Brown",
-      email: "emma@beautysalon.com",
-      category: "Beauty",
-      rating: 4.3,
-      reviews: 78,
-      status: "Suspended",
-      joined: "Feb 20, 2024",
-    },
-  ]
+  // Fetch business users from Firestore
+  useEffect(() => {
+    const fetchBusinesses = async () => {
+      try {
+        const usersCollection = collection(db, "users")
+        const usersSnapshot = await getDocs(usersCollection)
+        
+        const businessesData: BusinessUser[] = []
+        
+        for (const userDoc of usersSnapshot.docs) {
+          const userData = userDoc.data()
+          
+          // Only include business users
+          if (userData.role !== "BUSER") continue
+          
+          const createdAt = userData.createdAt?.toDate() || new Date()
+          const businessInfo = userData.businessInfo || {}
+          
+          // Fetch reviews to calculate rating
+          const reviewsCollection = collection(db, "users", userDoc.id, "reviews")
+          const reviewsSnapshot = await getDocs(reviewsCollection)
+          
+          let totalRating = 0
+          let reviewCount = 0
+          
+          reviewsSnapshot.forEach(reviewDoc => {
+            const reviewData = reviewDoc.data()
+            totalRating += reviewData.rating || 0
+            reviewCount++
+          })
+          
+          const averageRating = reviewCount > 0 ? 
+            parseFloat((totalRating / reviewCount).toFixed(1)) : 0
+          
+          businessesData.push({
+            uid: userDoc.id,
+            displayName: userData.displayName || "Unknown Owner",
+            email: userData.email || "No email",
+            createdAt,
+            businessName: businessInfo.businessName || "Unnamed Business",
+            category: businessInfo.category || "Uncategorized",
+            status: userData.status || "Pending",
+            rating: averageRating,
+            reviewCount
+          })
+        }
+        
+        setBusinesses(businessesData)
+      } catch (error) {
+        console.error("Error fetching businesses:", error)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+    
+    fetchBusinesses()
+  }, [])
 
-   const filteredBusinesses = businesses.filter(
+  const filteredBusinesses = businesses.filter(
     (business) =>
-      business.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      business.owner.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      business.category.toLowerCase().includes(searchQuery.toLowerCase()),
+      business.businessName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      business.displayName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      business.category.toLowerCase().includes(searchQuery.toLowerCase())
   )
 
   const getStatusColor = (status: string) => {
@@ -90,13 +105,8 @@ export default function BusinessesPage() {
     }
   }
 
-  // Simulate loading
   const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
     setSearchQuery(e.target.value)
-    if (e.target.value) {
-      setIsLoading(true)
-      setTimeout(() => setIsLoading(false), 300)
-    }
   }
 
   return (
@@ -127,7 +137,23 @@ export default function BusinessesPage() {
               <div className="flex justify-center items-center h-64">
                 <div className="animate-pulse flex space-x-4">
                   <div className="rounded-full bg-orange-200 h-12 w-12"></div>
+                  <div className="space-y-2">
+                    <div className="h-4 bg-orange-200 rounded w-64"></div>
+                    <div className="h-4 bg-orange-200 rounded w-56"></div>
+                  </div>
                 </div>
+              </div>
+            ) : filteredBusinesses.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-64 text-gray-500 p-4 text-center">
+                <div className="bg-gray-100 p-4 rounded-full mb-4">
+                  <Search className="h-10 w-10 text-gray-400" />
+                </div>
+                <h3 className="text-lg font-medium mb-1">No businesses found</h3>
+                <p className="max-w-md">
+                  {searchQuery 
+                    ? "No businesses match your search. Try different keywords." 
+                    : "No businesses registered yet. New businesses will appear here once they sign up."}
+                </p>
               </div>
             ) : (
               <Table className="rounded-lg overflow-hidden">
@@ -144,17 +170,17 @@ export default function BusinessesPage() {
                 <TableBody>
                   {filteredBusinesses.map((business) => (
                     <TableRow 
-                      key={business.id} 
+                      key={business.uid} 
                       className="border-b border-orange-100 hover:bg-orange-50 transition-all duration-200 ease-in-out"
                     >
                       <TableCell className="font-medium group">
                         <span className="group-hover:text-orange-600 transition-colors">
-                          {business.name}
+                          {business.businessName}
                         </span>
                       </TableCell>
                       <TableCell>
                         <div>
-                          <p className="font-medium">{business.owner}</p>
+                          <p className="font-medium">{business.displayName}</p>
                           <p className="text-sm text-gray-500 group-hover:text-orange-500 transition-colors">
                             {business.email}
                           </p>
@@ -167,9 +193,9 @@ export default function BusinessesPage() {
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center space-x-1">
-                          <Star className="h-4 w-4 text-yellow-500 fill-current animate-pulse" />
+                          <Star className="h-4 w-4 text-yellow-500 fill-current" />
                           <span className="font-semibold">{business.rating}</span>
-                          <span className="text-xs text-gray-500">({business.reviews})</span>
+                          <span className="text-xs text-gray-500">({business.reviewCount})</span>
                         </div>
                       </TableCell>
                       <TableCell>
@@ -179,7 +205,9 @@ export default function BusinessesPage() {
                           {business.status}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-gray-600">{business.joined}</TableCell>
+                      <TableCell className="text-gray-600">
+                        {format(business.createdAt, "MMM d, yyyy")}
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>

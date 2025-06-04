@@ -1,5 +1,5 @@
 "use client"
-import { useState } from "react"
+import { useCallback, useState } from "react"
 import type React from "react"
 import { Link, useLocation } from "react-router-dom"
 import { LayoutDashboard, Building2, Users, Menu, X, LogOut, Star } from "lucide-react"
@@ -41,6 +41,11 @@ export function SimpleAdminLayout({ children }: SimpleAdminLayoutProps) {
     </>
   )
 
+   const handleLogout = useCallback(() => {
+      window.location.href = "/login"
+    }, [])
+  
+
   return (
     <div className="flex min-h-screen bg-gray-50">
       {/* Desktop Sidebar */}
@@ -57,9 +62,14 @@ export function SimpleAdminLayout({ children }: SimpleAdminLayoutProps) {
         </nav>
 
         <div className="absolute bottom-4 left-4 right-4 md:w-56">
-          <Button variant="outline" className="w-full flex items-center gap-2 text-gray-700">
-            <LogOut size={18} />
-            <span>Sign Out</span>
+          <Button
+            variant="ghost"
+            className="w-full flex items-center gap-3 justify-start text-red-600 hover:text-white hover:bg-red-500 px-4 py-2 transition-all duration-300 rounded-lg"
+            onClick={handleLogout}
+            aria-label="Logout"
+          >
+            <LogOut className="h-5 w-5" />
+            Logout
           </Button>
         </div>
       </div>
@@ -93,10 +103,15 @@ export function SimpleAdminLayout({ children }: SimpleAdminLayoutProps) {
             </nav>
           </div>
           <div className="absolute bottom-4 left-4 right-4">
-            <Button variant="outline" className="w-full flex items-center gap-2 text-gray-700">
-              <LogOut size={18} />
-              <span>Sign Out</span>
-            </Button>
+            <Button
+            variant="ghost"
+            className="w-full flex items-center gap-3 justify-start text-red-600 hover:text-white hover:bg-red-500 px-4 py-2 transition-all duration-300 rounded-lg"
+            onClick={handleLogout}
+            aria-label="Logout"
+          >
+            <LogOut className="h-5 w-5" />
+            Logout
+          </Button>
           </div>
         </SheetContent>
       </Sheet>

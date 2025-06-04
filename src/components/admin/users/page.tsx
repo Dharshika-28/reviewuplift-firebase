@@ -1,5 +1,5 @@
 "use client"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { SimpleAdminLayout } from "@/components/simple-admin-layout"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -7,20 +7,65 @@ import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Search } from "lucide-react"
 import { motion } from "framer-motion"
+import { collection, getDocs } from "firebase/firestore"
+import { db } from "@/firebase/firebase"
+import { format } from "date-fns"
+
+interface User {
+  uid: string;
+  displayName: string;
+  email: string;
+  role: "ADMIN" | "BUSINESS";
+  status: "Active" | "Inactive" | "Pending";
+  createdAt: Date;
+  businessName?: string;
+}
 
 export default function UsersPage() {
   const [searchQuery, setSearchQuery] = useState("")
-  const [isLoading, setIsLoading] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
+  const [users, setUsers] = useState<User[]>([])
 
-  // Mock user data
-  const users = [
-    // ... same user data ...
-  ]
+  // Fetch users from Firestore
+  useEffect(() => {
+    const fetchUsers = async () => {
+      try {
+        const usersCollection = collection(db, "users")
+        const usersSnapshot = await getDocs(usersCollection)
+        
+        const usersData: User[] = []
+        
+        usersSnapshot.forEach(userDoc => {
+          const userData = userDoc.data()
+          const createdAt = userData.createdAt?.toDate() || new Date()
+          
+          usersData.push({
+            uid: userDoc.id,
+            displayName: userData.displayName || "No Name",
+            email: userData.email || "No Email",
+            role: userData.role || "BUSINESS",
+            status: userData.status || "Pending",
+            createdAt,
+            businessName: userData.businessInfo?.businessName
+          })
+        })
+        
+        setUsers(usersData)
+      } catch (error) {
+        console.error("Error fetching users:", error)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+    
+    fetchUsers()
+  }, [])
 
   const filteredUsers = users.filter(
     (user) =>
-      user.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      user.email.toLowerCase().includes(searchQuery.toLowerCase()),
+      user.displayName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      user.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (user.businessName && user.businessName.toLowerCase().includes(searchQuery.toLowerCase()))
   )
 
   const getStatusColor = (status: string) => {
@@ -29,18 +74,15 @@ export default function UsersPage() {
         return "bg-green-100 text-green-800 shadow-sm hover:shadow-green-200 transition-shadow"
       case "Inactive":
         return "bg-gray-100 text-gray-800 shadow-sm hover:shadow-gray-200 transition-shadow"
+      case "Pending":
+        return "bg-yellow-100 text-yellow-800 shadow-sm hover:shadow-yellow-200 transition-shadow"
       default:
         return "bg-gray-100 text-gray-800"
     }
   }
 
-  // Simulate loading
   const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
     setSearchQuery(e.target.value)
-    if (e.target.value) {
-      setIsLoading(true)
-      setTimeout(() => setIsLoading(false), 300)
-    }
   }
 
   return (
@@ -71,7 +113,23 @@ export default function UsersPage() {
               <div className="flex justify-center items-center h-64">
                 <div className="animate-pulse flex space-x-4">
                   <div className="rounded-full bg-orange-200 h-12 w-12"></div>
+                  <div className="space-y-2">
+                    <div className="h-4 bg-orange-200 rounded w-64"></div>
+                    <div className="h-4 bg-orange-200 rounded w-56"></div>
+                  </div>
                 </div>
+              </div>
+            ) : filteredUsers.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-64 text-gray-500 p-4 text-center">
+                <div className="bg-gray-100 p-4 rounded-full mb-4">
+                  <Search className="h-10 w-10 text-gray-400" />
+                </div>
+                <h3 className="text-lg font-medium mb-1">No users found</h3>
+                <p className="max-w-md">
+                  {searchQuery 
+                    ? "No users match your search. Try different keywords." 
+                    : "No users registered yet. New users will appear here once they sign up."}
+                </p>
               </div>
             ) : (
               <Table className="rounded-lg overflow-hidden">
@@ -79,6 +137,7 @@ export default function UsersPage() {
                   <TableRow className="hover:bg-orange-50">
                     <TableHead className="font-bold text-orange-800">Name</TableHead>
                     <TableHead className="font-bold text-orange-800">Email</TableHead>
+                    <TableHead className="font-bold text-orange-800">Business</TableHead>
                     <TableHead className="font-bold text-orange-800">Role</TableHead>
                     <TableHead className="font-bold text-orange-800">Status</TableHead>
                     <TableHead className="font-bold text-orange-800">Joined</TableHead>
@@ -87,7 +146,7 @@ export default function UsersPage() {
                 <TableBody>
                   {filteredUsers.map((user) => (
                     <motion.tr 
-                      key={user.id}
+                      key={user.uid}
                       className="border-b border-orange-100 hover:bg-orange-50 transition-all duration-200"
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
@@ -95,13 +154,22 @@ export default function UsersPage() {
                     >
                       <TableCell className="font-medium group">
                         <span className="group-hover:text-orange-600 transition-colors">
-                          {user.name}
+                          {user.displayName}
                         </span>
                       </TableCell>
                       <TableCell className="group">
                         <span className="group-hover:text-orange-500 transition-colors">
                           {user.email}
                         </span>
+                      </TableCell>
+                      <TableCell>
+                        {user.businessName ? (
+                          <Badge variant="outline" className="border-orange-200 text-orange-700 bg-orange-50">
+                            {user.businessName}
+                          </Badge>
+                        ) : (
+                          <span className="text-gray-400 text-sm">N/A</span>
+                        )}
                       </TableCell>
                       <TableCell>
                         <Badge
@@ -118,7 +186,9 @@ export default function UsersPage() {
                           {user.status}
                         </Badge>
                       </TableCell>
-                      <TableCell className="text-gray-600">{user.joined}</TableCell>
+                      <TableCell className="text-gray-600">
+                        {format(user.createdAt, "MMM d, yyyy")}
+                      </TableCell>
                     </motion.tr>
                   ))}
                 </TableBody>

@@ -96,7 +96,7 @@ export default function AdminRegistrationForm() {
 
     try {
       // Admin code verification
-      if (adminCode !== "ADMIN123") {
+      if (adminCode !== "Monikan") {
         throw new Error("Invalid admin authorization code");
       }
 

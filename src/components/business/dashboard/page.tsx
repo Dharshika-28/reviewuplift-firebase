@@ -39,6 +39,8 @@ interface Review {
   review: string;
   createdAt: { seconds: number };
   status: string;
+  branchname: string;
+  replied: boolean;
 }
 
 export default function BusinessDashboard() {
@@ -63,44 +65,58 @@ export default function BusinessDashboard() {
           const userRef = doc(db, "users", user.uid);
           const userDoc = await getDoc(userRef);
           
-          if (!userDoc.exists() || !userDoc.data()?.businessFormFilled) {
+          if (!userDoc.exists()) {
             navigate("/businessform");
             return;
           }
 
-          // Get business data from user document
-          const businessData = userDoc.data()?.businessInfo || {};
+          const userData = userDoc.data();
+          const businessData = userData?.businessInfo || {};
           setBusinessName(businessData.businessName || "");
+
+          // Get stats from businessInfo
+          setStats(prev => ({
+            ...prev,
+            linkClicks: businessData.linkClicks || 0,
+            responseRate: businessData.responseRate || 0
+          }));
 
           // Get reviews from subcollection
           const reviewsQuery = query(
-            collection(db, "users", user.uid, "reviews"),
-            where("status", "==", "published")
+            collection(db, "users", user.uid, "reviews")
           );
           
           const querySnapshot = await getDocs(reviewsQuery);
           const reviewsData: Review[] = [];
           let totalRating = 0;
-          const ratingCounts = [0, 0, 0, 0, 0];
+          const ratingCounts = [0, 0, 0, 0, 0]; // [5-star, 4-star, 3-star, 2-star, 1-star]
 
           querySnapshot.forEach((doc) => {
             const data = doc.data();
+            const createdAt = data.createdAt;
+            const seconds = createdAt ? createdAt.seconds : 0;
+            
             reviewsData.push({
               id: doc.id,
-              name: data.name,
-              rating: data.rating,
-              review: data.review,
-              createdAt: data.createdAt,
-              status: data.status,
+              name: data.name || "Anonymous",
+              rating: data.rating || 0,
+              review: data.review || data.message || "",
+              createdAt: { seconds },
+              status: data.status || "pending",
+              branchname: data.branchname || "",
+              replied: data.replied || false
             });
 
+            // Update stats
             totalRating += data.rating;
-            // Fix: Correct rating distribution calculation
-            ratingCounts[5 - data.rating]++;
+            if (data.rating >= 1 && data.rating <= 5) {
+              ratingCounts[5 - data.rating]++; // 5-star at index 0, 1-star at index 4
+            }
           });
 
           const totalReviews = reviewsData.length;
-          const averageRating = totalReviews > 0 ? parseFloat((totalRating / totalReviews).toFixed(1)) : 0;
+          const averageRating = totalReviews > 0 ? 
+            parseFloat((totalRating / totalReviews).toFixed(1)) : 0;
 
           setReviews(
             reviewsData.sort(
@@ -108,13 +124,12 @@ export default function BusinessDashboard() {
             )
           );
           
-          setStats({
+          setStats(prev => ({
+            ...prev,
             totalReviews,
             averageRating,
-            linkClicks: businessData.linkClicks || 0,
-            responseRate: businessData.responseRate || 0,
-            ratingDistribution: ratingCounts.reverse(), // Reverse to show 5-star first
-          });
+            ratingDistribution: ratingCounts
+          }));
         } catch (error) {
           console.error("Error fetching data:", error);
         } finally {
@@ -142,10 +157,47 @@ export default function BusinessDashboard() {
       : 0;
   };
 
+  const getStatusBadge = (status: string, replied: boolean) => {
+    if (replied) {
+      return (
+        <span className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full">
+          Replied
+        </span>
+      );
+    }
+    
+    switch (status) {
+      case 'published':
+        return (
+          <span className="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full">
+            Published
+          </span>
+        );
+      case 'pending':
+        return (
+          <span className="bg-yellow-100 text-yellow-800 text-xs px-2 py-1 rounded-full">
+            Pending
+          </span>
+        );
+      case 'rejected':
+        return (
+          <span className="bg-red-100 text-red-800 text-xs px-2 py-1 rounded-full">
+            Rejected
+          </span>
+        );
+      default:
+        return (
+          <span className="bg-gray-100 text-gray-800 text-xs px-2 py-1 rounded-full">
+            {status}
+          </span>
+        );
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex min-h-screen bg-gray-50">
-        <Sidebar isAdmin={false} />
+        <Sidebar />
         <div className="flex-1 md:ml-64 p-8">
           <div className="max-w-6xl mx-auto">
             <div className="flex items-center justify-center h-64">
@@ -159,7 +211,7 @@ export default function BusinessDashboard() {
 
   return (
     <div className="flex min-h-screen bg-gray-50">
-      <Sidebar isAdmin={false} />
+      <Sidebar />
       <div className="flex-1 md:ml-64 p-8">
         <div className="max-w-6xl mx-auto">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-8">
@@ -241,10 +293,13 @@ export default function BusinessDashboard() {
                       >
                         <div className="flex justify-between items-start mb-1">
                           <div className="font-medium">
-                            {review.name || "Anonymous"}
+                            {review.name}
                           </div>
-                          <div className="text-sm text-muted-foreground">
-                            {formatDate(review.createdAt.seconds)}
+                          <div className="flex items-center gap-2">
+                            <div className="text-sm text-muted-foreground">
+                              {formatDate(review.createdAt.seconds)}
+                            </div>
+                            {getStatusBadge(review.status, review.replied)}
                           </div>
                         </div>
                         <div className="flex mb-2">
@@ -259,7 +314,12 @@ export default function BusinessDashboard() {
                             />
                           ))}
                         </div>
-                        <p className="text-gray-700">{review.review}</p>
+                        <p className="text-gray-700 mb-2">{review.review}</p>
+                        {review.branchname && (
+                          <p className="text-sm text-gray-500">
+                            Branch: {review.branchname}
+                          </p>
+                        )}
                       </div>
                     ))
                   ) : (

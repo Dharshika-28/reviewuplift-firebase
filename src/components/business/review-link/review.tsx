@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 import { Mountain, Star, ChevronRight, ThumbsUp, ThumbsDown } from "lucide-react"
 import { useNavigate } from "react-router-dom"
 import { db, auth } from "@/firebase/firebase"
-import { collection, doc, setDoc, serverTimestamp, getDoc } from "firebase/firestore"
+import { collection, doc, setDoc, serverTimestamp, getDoc, addDoc } from "firebase/firestore"
 import { toast } from "sonner"
 import { onAuthStateChanged } from "firebase/auth"
 
@@ -152,11 +152,11 @@ export default function ReviewPage() {
   }
 
   const submitReview = async (reviewData: ReviewFormData) => {
-    const currentUser = auth.currentUser
+    const currentUser = auth.currentUser;
     
     if (!currentUser) {
-      toast.error("You must be logged in to submit a review")
-      return
+      toast.error("You must be logged in to submit a review");
+      return;
     }
 
     try {
@@ -164,17 +164,25 @@ export default function ReviewPage() {
         ...reviewData,
         userId: currentUser.uid,
         businessName,
-        createdAt: serverTimestamp()
-      }
+        createdAt: serverTimestamp(),
+        status: 'pending'
+      };
 
-      // Add to negative_reviews collection (same as previous implementation)
-      const negativeReviewsRef = collection(db, "negative_reviews")
-      await setDoc(doc(negativeReviewsRef), reviewToSubmit)
+      // Create reference to user-specific reviews subcollection
+      const userReviewsRef = collection(
+        db, 
+        "users", 
+        currentUser.uid, 
+        "reviews"
+      );
+      
+      // Add to user-specific reviews collection
+      await addDoc(userReviewsRef, reviewToSubmit);
 
-      toast.success("Feedback submitted successfully!")
+      toast.success("Feedback submitted successfully!");
     } catch (error) {
-      console.error("Error submitting review:", error)
-      throw error
+      console.error("Error submitting review:", error);
+      throw error;
     }
   }
 
