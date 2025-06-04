@@ -16,7 +16,7 @@ interface BusinessUser {
   email: string;
   createdAt: Date;
   businessName: string;
-  category: string;
+  businessType: string; // Changed from businesstype to businessType
   status: string;
   rating: number;
   reviewCount: number;
@@ -67,7 +67,8 @@ export default function BusinessesPage() {
             email: userData.email || "No email",
             createdAt,
             businessName: businessInfo.businessName || "Unnamed Business",
-            category: businessInfo.category || "Uncategorized",
+            // Use businessType field with correct casing
+            businessType: businessInfo.businessType || "Uncategorized",
             status: userData.status || "Pending",
             rating: averageRating,
             reviewCount
@@ -89,7 +90,8 @@ export default function BusinessesPage() {
     (business) =>
       business.businessName.toLowerCase().includes(searchQuery.toLowerCase()) ||
       business.displayName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      business.category.toLowerCase().includes(searchQuery.toLowerCase())
+      // Search includes businessType instead of businesstype
+      business.businessType.toLowerCase().includes(searchQuery.toLowerCase())
   )
 
   const getStatusColor = (status: string) => {
@@ -161,7 +163,7 @@ export default function BusinessesPage() {
                   <TableRow className="hover:bg-orange-50">
                     <TableHead className="font-bold text-orange-800">Business Name</TableHead>
                     <TableHead className="font-bold text-orange-800">Owner</TableHead>
-                    <TableHead className="font-bold text-orange-800">Category</TableHead>
+                    <TableHead className="font-bold text-orange-800">Business Type</TableHead>
                     <TableHead className="font-bold text-orange-800">Rating</TableHead>
                     <TableHead className="font-bold text-orange-800">Status</TableHead>
                     <TableHead className="font-bold text-orange-800">Joined</TableHead>
@@ -188,7 +190,8 @@ export default function BusinessesPage() {
                       </TableCell>
                       <TableCell>
                         <Badge variant="outline" className="border-orange-200 text-orange-700 bg-orange-50">
-                          {business.category}
+                          {/* Display businessType instead of businesstype */}
+                          {business.businessType}
                         </Badge>
                       </TableCell>
                       <TableCell>

@@ -51,11 +51,11 @@ const Navbar = () => {
                 Get Started Free
               </Button>
             </Link>
-            <Link to="/components/business/dashboard">
+            {/* <Link to="/components/business/dashboard">
               <Button className="bg-orange-600 hover:bg-orange-700">
                 Dashboard
               </Button>
-            </Link>
+            </Link> */}
           </div>
 
           <div className="flex md:hidden">

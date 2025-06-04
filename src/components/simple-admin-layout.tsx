@@ -47,7 +47,7 @@ export function SimpleAdminLayout({ children }: SimpleAdminLayoutProps) {
   
 
   return (
-    <div className="flex min-h-screen bg-gray-50">
+    <div className="w-full flex min-h-screen bg-gray-50">
       {/* Desktop Sidebar */}
       <div className="hidden md:block w-64 bg-white border-r border-gray-200 min-h-screen p-4">
         <div className="flex items-center justify-center mb-8 pt-4">
