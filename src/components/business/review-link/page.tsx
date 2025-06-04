@@ -12,11 +12,9 @@ import ConfirmDialog from "@/components/confirm-dialog"
 import { useNavigate } from "react-router-dom"
 import { Textarea } from "@/components/ui/textarea"
 import { auth, db, storage } from "@/firebase/firebase"
-import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore"
+import { doc, getDoc, setDoc, serverTimestamp, collection, addDoc } from "firebase/firestore"
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage"
 import { onAuthStateChanged } from "firebase/auth"
-
-
 
 // Add UUID generation function
 const generateUUID = () => {
@@ -26,7 +24,6 @@ const generateUUID = () => {
     return v.toString(16);
   });
 };
-
 
 const initialState = {
   businessName: "",
@@ -303,7 +300,31 @@ export default function ReviewLinkPage() {
     return !Object.values(errors).some(Boolean)
   }
 
-  const handleLeaveReview = () => {
+  const saveNegativeReview = async () => {
+    if (!currentUser) return;
+    
+    try {
+      const reviewData = {
+        ...formData,
+        rating,
+        businessName,
+        createdAt: serverTimestamp(),
+        status: 'new',
+        userId: currentUser.uid
+      };
+      
+      // Add to the negative_reviews collection
+      await addDoc(collection(db, "negative_reviews"), reviewData);
+      
+      setSubmitted(true);
+      setSubmissionMessage("We're sorry to hear about your experience. Thank you for your feedback.");
+    } catch (error) {
+      console.error("Error saving negative review:", error);
+      setSubmissionMessage("There was an error submitting your feedback. Please try again.");
+    }
+  }
+
+  const handleLeaveReview = async () => {
     if (rating === 0) return
     
     if (!isReviewGatingEnabled) {
@@ -323,8 +344,7 @@ export default function ReviewLinkPage() {
 
     if (!validateForm()) return
 
-    setSubmitted(true)
-    setSubmissionMessage("We're sorry to hear about your experience. Thank you for your feedback.")
+    await saveNegativeReview();
   }
 
   const handleToggleReviewGating = () => {

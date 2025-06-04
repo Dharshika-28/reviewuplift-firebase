@@ -145,8 +145,9 @@ export default function ReviewPage() {
       })
       setSubmissionMessage("We're sorry to hear about your experience. Thank you for your feedback.")
       setSubmitted(true)
-    } finally {
-      setLoading(false)
+    } catch (error) {
+      console.error("Error submitting review:", error)
+      toast.error("Failed to submit feedback. Please try again.")
     }
   }
 
@@ -162,24 +163,17 @@ export default function ReviewPage() {
       const reviewToSubmit = {
         ...reviewData,
         userId: currentUser.uid,
-        status: 'pending',
-        createdAt: serverTimestamp(),
-        businessName
+        businessName,
+        createdAt: serverTimestamp()
       }
 
-      // Add to main reviews collection
-      const reviewsRef = collection(db, "reviews")
-      const newReviewRef = doc(reviewsRef)
-      await setDoc(newReviewRef, reviewToSubmit)
-
-      // Add to business's reviews subcollection
-      const businessReviewsRef = collection(db, "businesses", businessId, "reviews")
-      await setDoc(doc(businessReviewsRef, newReviewRef.id), reviewToSubmit)
+      // Add to negative_reviews collection (same as previous implementation)
+      const negativeReviewsRef = collection(db, "negative_reviews")
+      await setDoc(doc(negativeReviewsRef), reviewToSubmit)
 
       toast.success("Feedback submitted successfully!")
     } catch (error) {
       console.error("Error submitting review:", error)
-      toast.error("Failed to submit feedback. Please try again.")
       throw error
     }
   }

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import {
   Check,
   FolderOpen,
@@ -28,7 +28,9 @@ import Sidebar from "@/components/sidebar"
 import ReviewReplyModal from "@/components/review-reply-modal"
 import ConfirmDialog from "@/components/confirm-dialog"
 import type { Review } from "@/lib/types"
-import { reviewsData } from "@/lib/data"
+import { collection, query, where, getDocs, doc, deleteDoc, updateDoc } from "firebase/firestore"
+import { db } from "@/firebase/firebase"
+import { format } from "date-fns"
 
 // Star Renderer
 const renderStars = (rating: number) => (
@@ -55,33 +57,97 @@ const renderStars = (rating: number) => (
 )
 
 export default function BusinessReviews() {
-  const [reviews, setReviews] = useState<Review[]>(reviewsData)
+  const [reviews, setReviews] = useState<Review[]>([])
   const [searchTerm, setSearchTerm] = useState("")
   const [filterOption, setFilterOption] = useState("All")
   const [selectedReview, setSelectedReview] = useState<Review | null>(null)
   const [reviewToDelete, setReviewToDelete] = useState<Review | null>(null)
+  const [loading, setLoading] = useState(true)
 
-  const handleDeleteReview = () => {
+  useEffect(() => {
+    const fetchReviews = async () => {
+      try {
+        const q = query(collection(db, "negative_reviews"))
+        const querySnapshot = await getDocs(q)
+        
+        const reviewsData: Review[] = []
+        querySnapshot.forEach((doc) => {
+          const data = doc.data()
+          reviewsData.push({
+            id: doc.id,
+            name: data.name || "Anonymous",
+            email: data.email || "",
+            phone: data.phone || "",
+            branchname: data.branchname || "",
+            message: data.review || "",
+            rating: data.rating || 0,
+            date: data.createdAt ? format(data.createdAt.toDate(), 'MMM d, yyyy') : "Unknown date",
+            replied: data.replied || false
+          })
+        })
+        
+        setReviews(reviewsData)
+      } catch (error) {
+        console.error("Error fetching reviews:", error)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchReviews()
+  }, [])
+
+  const handleDeleteReview = async () => {
     if (!reviewToDelete) return
-    setReviews(reviews.filter((review) => review.id !== reviewToDelete.id))
-    setReviewToDelete(null)
+    
+    try {
+      await deleteDoc(doc(db, "negative_reviews", reviewToDelete.id))
+      setReviews(reviews.filter((review) => review.id !== reviewToDelete.id))
+    } catch (error) {
+      console.error("Error deleting review:", error)
+    } finally {
+      setReviewToDelete(null)
+    }
   }
 
-  const handleToggleReply = (id: number) => {
-    setReviews(
-      reviews.map((review) =>
-        review.id === id ? { ...review, replied: !review.replied } : review
-      )
-    )
+  const handleToggleReply = async (id: string) => {
+    try {
+      const reviewRef = doc(db, "negative_reviews", id)
+      const review = reviews.find(r => r.id === id)
+      
+      if (review) {
+        await updateDoc(reviewRef, {
+          replied: !review.replied
+        })
+        
+        setReviews(
+          reviews.map((review) =>
+            review.id === id ? { ...review, replied: !review.replied } : review
+          )
+        )
+      }
+    } catch (error) {
+      console.error("Error toggling reply status:", error)
+    }
   }
 
-  const handleReplyToReview = (reviewId: number, replyText: string) => {
-    setReviews(
-      reviews.map((review) =>
-        review.id === reviewId ? { ...review, replied: true } : review
+  const handleReplyToReview = async (reviewId: string, replyText: string) => {
+    try {
+      const reviewRef = doc(db, "negative_reviews", reviewId)
+      await updateDoc(reviewRef, {
+        replied: true,
+        reply: replyText,
+        repliedAt: new Date()
+      })
+      
+      setReviews(
+        reviews.map((review) =>
+          review.id === reviewId ? { ...review, replied: true } : review
+        )
       )
-    )
-    console.log(`Reply to review ${reviewId}: ${replyText}`)
+    } catch (error) {
+      console.error("Error replying to review:", error)
+    }
   }
 
   const handleReplyClick = (review: Review) => {
@@ -95,7 +161,8 @@ export default function BusinessReviews() {
   const filteredReviews = reviews.filter((review) => {
     const matchesSearch =
       review.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      review.message.toLowerCase().includes(searchTerm.toLowerCase())
+      review.message.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      review.branchname.toLowerCase().includes(searchTerm.toLowerCase())
 
     const matchesFilter =
       filterOption === "All" ||
@@ -106,6 +173,20 @@ export default function BusinessReviews() {
 
     return matchesSearch && matchesFilter
   })
+
+  if (loading) {
+    return (
+      <div className="flex min-h-screen bg-gray-50">
+        <Sidebar isAdmin={false} />
+        <div className="flex-1 md:ml-64 p-8 flex items-center justify-center">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-orange-500 mx-auto"></div>
+            <p className="mt-4 text-gray-600">Loading reviews...</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="flex min-h-screen bg-gray-50">
