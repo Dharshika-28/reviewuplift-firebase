@@ -2,10 +2,11 @@
 import { useCallback, useState } from "react"
 import type React from "react"
 import { Link, useLocation } from "react-router-dom"
-import { LayoutDashboard, Building2, Users, Menu, X, LogOut, Star } from "lucide-react"
+import { LayoutDashboard, Building2, Users, Menu, X, LogOut, Star, User, Icon, BarChart2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent } from "@/components/ui/sheet"
+import { Label } from "recharts"
 
 interface SimpleAdminLayoutProps {
   children: React.ReactNode
@@ -19,7 +20,10 @@ export function SimpleAdminLayout({ children }: SimpleAdminLayoutProps) {
   const navItems = [
     { icon: LayoutDashboard, label: "Dashboard", href: "/components/admin/dashboard" },
     { icon: Building2, label: "Businesses", href: "/components/admin/businesses" },
+    { icon: BarChart2, label: "Analytics", href:"/components/admin/analytics"},
     { icon: Users, label: "Users", href: "/components/admin/users" },
+    { icon: User, label: "Register", href: "/components/admin/register" },
+
   ]
 
   const NavLinks = () => (

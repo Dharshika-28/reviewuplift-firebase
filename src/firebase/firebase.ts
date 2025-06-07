@@ -20,13 +20,13 @@ import {
 import { getStorage } from "firebase/storage";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyDLew3ixW5fTSOBy6oFMb8U-t4UnF9cMBU",
-  authDomain: "reviewuplift-378f0.firebaseapp.com",
-  projectId: "reviewuplift-378f0",
-  storageBucket: "reviewuplift-378f0.appspot.com",
-  messagingSenderId: "149869204343",
-  appId: "1:149869204343:web:0462b498a7b478186b8772",
-  measurementId: "G-TS1H91W493",
+  apiKey: "AIzaSyCKQ8mKGOAZxUHyQjqu6V9vWVd6fPpxh1M",
+  authDomain: "reviewuplift-testing.firebaseapp.com",
+  projectId: "reviewuplift-testing",
+  storageBucket: "reviewuplift-testing.firebasestorage.app",
+  messagingSenderId: "256258929098",
+  appId: "1:256258929098:web:f5f2b708d7b4bad6f79f33",
+  measurementId: "G-NFQKY9YK7V"
 };
 
 const app = initializeApp(firebaseConfig);

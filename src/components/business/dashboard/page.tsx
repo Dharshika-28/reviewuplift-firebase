@@ -43,6 +43,42 @@ interface Review {
   replied: boolean;
 }
 
+const useSubscriptionStatus = () => {
+  const navigate = useNavigate();
+
+  const checkSubscription = async (userId: string) => {
+    const userRef = doc(db, "users", userId);
+    const userSnap = await getDoc(userRef);
+    
+    if (!userSnap.exists()) return false;
+    
+    const userData = userSnap.data();
+    const now = new Date();
+    
+    // If user has active subscription
+    if (userData.subscriptionActive) return true;
+    
+    // If user is still in trial period
+    if (userData.trialEndDate && userData.trialEndDate.toDate() > now) return true;
+    
+    // Trial expired and no active subscription
+    return false;
+  };
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        const hasActiveAccess = await checkSubscription(user.uid);
+        if (!hasActiveAccess) {
+          navigate("/pricing");
+        }
+      }
+    });
+
+    return () => unsubscribe();
+  }, [navigate]);
+};
+
 export default function BusinessDashboard() {
   const [period, setPeriod] = useState("week");
   const [businessName, setBusinessName] = useState("");
@@ -58,6 +94,9 @@ export default function BusinessDashboard() {
 
   const navigate = useNavigate();
 
+  // Check subscription status on component mount
+  useSubscriptionStatus();
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
@@ -66,7 +105,7 @@ export default function BusinessDashboard() {
           const userDoc = await getDoc(userRef);
           
           if (!userDoc.exists()) {
-            navigate("/businessform");
+            navigate("/login");
             return;
           }
 
@@ -372,7 +411,6 @@ export default function BusinessDashboard() {
   );
 }
 
-// Helper component
 function StatCard({
   title,
   icon,

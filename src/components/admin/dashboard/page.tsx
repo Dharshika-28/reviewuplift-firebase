@@ -3,8 +3,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { SimpleAdminLayout } from "@/components/simple-admin-layout"
 import { Users, Star, MessageSquare, Building2, Badge } from "lucide-react"
 import { motion } from "framer-motion"
-import { useEffect, useState } from "react"
-import { collection, getDocs } from "firebase/firestore"
+import { useEffect, useState, useCallback } from "react"
+import { collection, getDocs, query, where } from "firebase/firestore"
 import { db } from "@/firebase/firebase"
 import { format } from "date-fns"
 
@@ -32,84 +32,6 @@ export default function AdminDashboard() {
   
   const [recentLogins, setRecentLogins] = useState<BusinessUser[]>([])
   const [loading, setLoading] = useState(true)
-
-  // Fetch business users and calculate stats
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        // Fetch all users
-        const usersCollection = collection(db, "users")
-        const usersSnapshot = await getDocs(usersCollection)
-        
-        const allUsers: BusinessUser[] = []
-        let businessUsers: BusinessUser[] = []
-        let totalReviews = 0
-        let totalRating = 0
-        let reviewCount = 0
-        
-        for (const userDoc of usersSnapshot.docs) {
-          const userData = userDoc.data()
-          const createdAt = userData.createdAt?.toDate() || new Date()
-          
-          const user = {
-            uid: userDoc.id,
-            displayName: userData.displayName || "Unknown",
-            email: userData.email || "No email",
-            createdAt,
-            businessName: userData.businessInfo?.businessName,
-            role: userData.role || "BUSER",
-            status: userData.status || "Pending"
-          }
-          
-          allUsers.push(user)
-          
-          // Only process business users for reviews
-          if (user.role === "BUSER") {
-            businessUsers.push(user)
-            
-            // Fetch reviews for this user
-            const reviewsCollection = collection(db, "users", userDoc.id, "reviews")
-            const reviewsSnapshot = await getDocs(reviewsCollection)
-            
-            const userReviewCount = reviewsSnapshot.size
-            reviewCount += userReviewCount
-            totalReviews += userReviewCount
-            
-            // Calculate ratings
-            reviewsSnapshot.forEach(reviewDoc => {
-              const reviewData = reviewDoc.data() as Review
-              totalRating += reviewData.rating || 0
-            })
-          }
-        }
-        
-        // Calculate stats
-        const totalBusinesses = businessUsers.length
-        const averageRating = reviewCount > 0 ? 
-          parseFloat((totalRating / reviewCount).toFixed(1)) : 0
-        
-        // Sort by most recent
-        const sortedUsers = [...businessUsers]
-          .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
-          .slice(0, 5)
-        
-        setStats({
-          totalBusinesses,
-          totalReviews,
-          averageRating,
-          totalUsers: allUsers.length
-        })
-        
-        setRecentLogins(sortedUsers)
-      } catch (error) {
-        console.error("Error fetching dashboard data:", error)
-      } finally {
-        setLoading(false)
-      }
-    }
-    
-    fetchData()
-  }, [])
 
   // Animation variants
   const container = {
@@ -139,6 +61,96 @@ export default function AdminDashboard() {
     if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`
     return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`
   }
+
+  // Memoized fetch function
+  const fetchData = useCallback(async () => {
+    try {
+      setLoading(true)
+
+      // Fetch all users in parallel with business users
+      const usersCollection = collection(db, "users")
+      const [allUsersSnapshot, businessUsersSnapshot] = await Promise.all([
+        getDocs(usersCollection),
+        getDocs(query(usersCollection, where("role", "==", "BUSER")))
+      ])
+
+      // Process all users
+      const allUsers: BusinessUser[] = allUsersSnapshot.docs.map(userDoc => {
+        const userData = userDoc.data()
+        return {
+          uid: userDoc.id,
+          displayName: userData.displayName || "Unknown",
+          email: userData.email || "No email",
+          createdAt: userData.createdAt?.toDate() || new Date(),
+          businessName: userData.businessInfo?.businessName,
+          role: userData.role || "BUSER",
+          status: userData.status || "Pending"
+        }
+      })
+
+      // Process business users
+      const businessUsers: BusinessUser[] = businessUsersSnapshot.docs.map(userDoc => {
+        const userData = userDoc.data()
+        return {
+          uid: userDoc.id,
+          displayName: userData.displayName || "Unknown",
+          email: userData.email || "No email",
+          createdAt: userData.createdAt?.toDate() || new Date(),
+          businessName: userData.businessInfo?.businessName,
+          role: userData.role,
+          status: userData.status || "Pending"
+        }
+      })
+
+      // Fetch all reviews for business users in parallel
+      const reviewPromises = businessUsers.map(async (user) => {
+        const reviewsCollection = collection(db, "users", user.uid, "reviews")
+        const reviewsSnapshot = await getDocs(reviewsCollection)
+        return {
+          userId: user.uid,
+          reviews: reviewsSnapshot.docs.map(doc => doc.data() as Review),
+          count: reviewsSnapshot.size
+        }
+      })
+
+      const reviewsData = await Promise.all(reviewPromises)
+
+      // Calculate review statistics
+      let totalRating = 0
+      let reviewCount = 0
+
+      reviewsData.forEach(({ reviews }) => {
+        reviewCount += reviews.length
+        totalRating += reviews.reduce((sum, review) => sum + (review.rating || 0), 0)
+      })
+
+      // Calculate stats
+      const averageRating = reviewCount > 0 ? 
+        parseFloat((totalRating / reviewCount).toFixed(1)) : 0
+
+      // Sort by most recent
+      const sortedUsers = [...businessUsers]
+        .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+        .slice(0, 5)
+
+      setStats({
+        totalBusinesses: businessUsers.length,
+        totalReviews: reviewCount,
+        averageRating,
+        totalUsers: allUsers.length
+      })
+      
+      setRecentLogins(sortedUsers)
+    } catch (error) {
+      console.error("Error fetching dashboard data:", error)
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    fetchData()
+  }, [fetchData])
 
   if (loading) {
     return (

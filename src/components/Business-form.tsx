@@ -384,7 +384,7 @@ export default function BusinessForm() {
       toast.success(`Business details ${isUpdating ? 'updated' : 'saved'} successfully!`);
       
       setTimeout(() => {
-        navigate("/components/business/dashboard");
+        navigate("/login");
       }, 1500);
     } catch (error: any) {
       console.error("Error submitting form to Firebase:", error);

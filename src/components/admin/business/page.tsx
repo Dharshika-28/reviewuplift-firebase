@@ -1,12 +1,12 @@
 "use client"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { SimpleAdminLayout } from "@/components/simple-admin-layout"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Search, Star } from "lucide-react"
-import { collection, getDocs } from "firebase/firestore"
+import { collection, getDocs, query, where } from "firebase/firestore"
 import { db } from "@/firebase/firebase"
 import { format } from "date-fns"
 
@@ -16,7 +16,7 @@ interface BusinessUser {
   email: string;
   createdAt: Date;
   businessName: string;
-  businessType: string; // Changed from businesstype to businessType
+  businessType: string;
   status: string;
   rating: number;
   reviewCount: number;
@@ -27,25 +27,40 @@ export default function BusinessesPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [businesses, setBusinesses] = useState<BusinessUser[]>([])
 
-  // Fetch business users from Firestore
+  // Memoized status color function
+  const getStatusColor = useCallback((status: string) => {
+    switch (status) {
+      case "Active":
+        return "bg-green-100 text-green-800 shadow-sm hover:shadow-green-200 transition-shadow"
+      case "Pending":
+        return "bg-yellow-100 text-yellow-800 shadow-sm hover:shadow-yellow-200 transition-shadow"
+      case "Suspended":
+        return "bg-red-100 text-red-800 shadow-sm hover:shadow-red-200 transition-shadow"
+      default:
+        return "bg-gray-100 text-gray-800 shadow-sm"
+    }
+  }, [])
+
+  // Fetch business users from Firestore with optimizations
   useEffect(() => {
     const fetchBusinesses = async () => {
       try {
-        const usersCollection = collection(db, "users")
-        const usersSnapshot = await getDocs(usersCollection)
+        // Query only business users directly
+        const usersQuery = query(
+          collection(db, "users"),
+          where("role", "==", "BUSER")
+        )
         
+        const usersSnapshot = await getDocs(usersQuery)
         const businessesData: BusinessUser[] = []
         
-        for (const userDoc of usersSnapshot.docs) {
+        // Process data in parallel
+        const businessPromises = usersSnapshot.docs.map(async (userDoc) => {
           const userData = userDoc.data()
-          
-          // Only include business users
-          if (userData.role !== "BUSER") continue
-          
           const createdAt = userData.createdAt?.toDate() || new Date()
           const businessInfo = userData.businessInfo || {}
           
-          // Fetch reviews to calculate rating
+          // Get reviews count without fetching all reviews
           const reviewsCollection = collection(db, "users", userDoc.id, "reviews")
           const reviewsSnapshot = await getDocs(reviewsCollection)
           
@@ -61,21 +76,22 @@ export default function BusinessesPage() {
           const averageRating = reviewCount > 0 ? 
             parseFloat((totalRating / reviewCount).toFixed(1)) : 0
           
-          businessesData.push({
+          return {
             uid: userDoc.id,
             displayName: userData.displayName || "Unknown Owner",
             email: userData.email || "No email",
             createdAt,
             businessName: businessInfo.businessName || "Unnamed Business",
-            // Use businessType field with correct casing
             businessType: businessInfo.businessType || "Uncategorized",
             status: userData.status || "Pending",
             rating: averageRating,
             reviewCount
-          })
-        }
+          }
+        })
         
-        setBusinesses(businessesData)
+        // Wait for all promises to resolve
+        const resolvedBusinesses = await Promise.all(businessPromises)
+        setBusinesses(resolvedBusinesses)
       } catch (error) {
         console.error("Error fetching businesses:", error)
       } finally {
@@ -86,26 +102,18 @@ export default function BusinessesPage() {
     fetchBusinesses()
   }, [])
 
-  const filteredBusinesses = businesses.filter(
-    (business) =>
-      business.businessName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      business.displayName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      // Search includes businessType instead of businesstype
-      business.businessType.toLowerCase().includes(searchQuery.toLowerCase())
-  )
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "Active":
-        return "bg-green-100 text-green-800 shadow-sm hover:shadow-green-200 transition-shadow"
-      case "Pending":
-        return "bg-yellow-100 text-yellow-800 shadow-sm hover:shadow-yellow-200 transition-shadow"
-      case "Suspended":
-        return "bg-red-100 text-red-800 shadow-sm hover:shadow-red-200 transition-shadow"
-      default:
-        return "bg-gray-100 text-gray-800 shadow-sm"
-    }
-  }
+  // Optimized search filtering
+  const filteredBusinesses = useCallback(() => {
+    if (!searchQuery) return businesses
+    
+    const queryLower = searchQuery.toLowerCase()
+    return businesses.filter(
+      (business) =>
+        business.businessName.toLowerCase().includes(queryLower) ||
+        business.displayName.toLowerCase().includes(queryLower) ||
+        business.businessType.toLowerCase().includes(queryLower)
+    )
+  }, [businesses, searchQuery])
 
   const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
     setSearchQuery(e.target.value)
@@ -145,7 +153,7 @@ export default function BusinessesPage() {
                   </div>
                 </div>
               </div>
-            ) : filteredBusinesses.length === 0 ? (
+            ) : filteredBusinesses().length === 0 ? (
               <div className="flex flex-col items-center justify-center h-64 text-gray-500 p-4 text-center">
                 <div className="bg-gray-100 p-4 rounded-full mb-4">
                   <Search className="h-10 w-10 text-gray-400" />
@@ -170,7 +178,7 @@ export default function BusinessesPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredBusinesses.map((business) => (
+                  {filteredBusinesses().map((business) => (
                     <TableRow 
                       key={business.uid} 
                       className="border-b border-orange-100 hover:bg-orange-50 transition-all duration-200 ease-in-out"
@@ -190,7 +198,6 @@ export default function BusinessesPage() {
                       </TableCell>
                       <TableCell>
                         <Badge variant="outline" className="border-orange-200 text-orange-700 bg-orange-50">
-                          {/* Display businessType instead of businesstype */}
                           {business.businessType}
                         </Badge>
                       </TableCell>

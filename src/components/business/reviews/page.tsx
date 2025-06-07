@@ -9,6 +9,7 @@ import {
   Search,
   Star,
   Trash2,
+  MapPin,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -79,7 +80,6 @@ export default function BusinessReviews() {
     if (!currentUser) return;
     
     try {
-      // Query user-specific reviews subcollection
       const q = query(
         collection(db, "users", currentUser.uid, "reviews")
       );
@@ -88,7 +88,6 @@ export default function BusinessReviews() {
       const reviewsData: Review[] = [];
       querySnapshot.forEach((doc) => {
         const data = doc.data();
-        // Convert Firestore Timestamp to Date if exists
         const createdAt = data.createdAt ? data.createdAt.toDate() : null;
         
         reviewsData.push({
@@ -123,7 +122,6 @@ export default function BusinessReviews() {
     if (!reviewToDelete || !currentUser) return;
     
     try {
-      // Delete from user-specific collection
       await deleteDoc(
         doc(db, "users", currentUser.uid, "reviews", reviewToDelete.id)
       );
@@ -139,7 +137,6 @@ export default function BusinessReviews() {
     if (!currentUser) return;
     
     try {
-      // Update in user-specific collection
       const reviewRef = doc(db, "users", currentUser.uid, "reviews", id);
       const review = reviews.find(r => r.id === id);
       
@@ -159,34 +156,12 @@ export default function BusinessReviews() {
     }
   }
 
-  const handleReplyToReview = async (reviewId: string, replyText: string) => {
-    if (!currentUser) return;
-    
-    try {
-      // Update in user-specific collection
-      const reviewRef = doc(db, "users", currentUser.uid, "reviews", reviewId);
-      await updateDoc(reviewRef, {
-        replied: true,
-        reply: replyText,
-        repliedAt: new Date()
-      });
-      
-      setReviews(
-        reviews.map((review) =>
-          review.id === reviewId ? { ...review, replied: true } : review
-        )
-      );
-    } catch (error) {
-      console.error("Error replying to review:", error);
-    }
+  const handleEmailClick = (email: string) => {
+    window.open(`mailto:${email}`, '_blank')
   }
 
-  const handleReplyClick = (review: Review) => {
-    if (review.rating < 3) {
-      setSelectedReview(review)
-    } else {
-      window.open("https://www.google.com/search?q=google+review", "_blank")
-    }
+  const handlePhoneClick = (phone: string) => {
+    window.open(`tel:${phone}`, '_blank')
   }
 
   const filteredReviews = reviews.filter((review) => {
@@ -280,13 +255,30 @@ export default function BusinessReviews() {
                 {filteredReviews.map((review) => (
                   <motion.div
                     key={review.id}
-                    className="bg-white p-4 rounded-xl shadow-md flex flex-col gap-2 border border-orange-100 hover:shadow-lg transition-shadow"
+                    className="bg-white p-4 rounded-xl shadow-md flex flex-col gap-2 border border-orange-100 hover:shadow-lg transition-shadow relative"
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, height: 0 }}
                     transition={{ duration: 0.3 }}
                     whileHover={{ scale: 1.01 }}
                   >
+                    {review.replied && (
+                      <motion.div 
+                        className="absolute right-4 top-4"
+                        initial={{ scale: 0 }}
+                        animate={{ scale: 1 }}
+                        transition={{ 
+                          type: "spring",
+                          stiffness: 260,
+                          damping: 20
+                        }}
+                      >
+                        <div className="bg-green-100 p-2 rounded-full">
+                          <Check className="h-5 w-5 text-green-600" />
+                        </div>
+                      </motion.div>
+                    )}
+                    
                     <div className="flex justify-between items-start">
                       <div>
                         <div className="flex items-center gap-2">
@@ -299,67 +291,51 @@ export default function BusinessReviews() {
 
                     <div className="text-gray-700 py-2">{review.message}</div>
 
-                    {review.rating < 3 && (
-                      <div className="flex gap-4 mt-2">
-                        {review.email && (
-                          <Popover>
-                            <PopoverTrigger asChild>
-                              <Button 
-                                variant="ghost" 
-                                size="icon" 
-                                className="h-8 w-8 hover:bg-orange-50"
-                                aria-label="View email"
-                              >
-                                <MailOpen className="h-4 w-4 text-gray-500 hover:text-orange-500" />
-                              </Button>
-                            </PopoverTrigger>
-                            <PopoverContent className="w-auto p-2 border border-orange-200">
-                              <p className="text-sm">{review.email}</p>
-                            </PopoverContent>
-                          </Popover>
-                        )}
+                    <div className="flex gap-4 mt-2">
+                      {review.branchname && (
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              className="h-8 w-8 hover:bg-orange-50"
+                              aria-label="View branch"
+                            >
+                              <MapPin className="h-4 w-4 text-gray-500 hover:text-orange-500" />
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-auto p-2 border border-orange-200">
+                            <p className="text-sm">{review.branchname}</p>
+                          </PopoverContent>
+                        </Popover>
+                      )}
 
-                        {review.phone && (
-                          <Popover>
-                            <PopoverTrigger asChild>
-                              <Button 
-                                variant="ghost" 
-                                size="icon" 
-                                className="h-8 w-8 hover:bg-orange-50"
-                                aria-label="View phone"
-                              >
-                                <Phone className="h-4 w-4 text-gray-500 hover:text-orange-500" />
-                              </Button>
-                            </PopoverTrigger>
-                            <PopoverContent className="w-auto p-2 border border-orange-200">
-                              <p className="text-sm">{review.phone}</p>
-                            </PopoverContent>
-                          </Popover>
-                        )}
-                      </div>
-                    )}
+                      {review.email && (
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          className="h-8 w-8 hover:bg-orange-50"
+                          aria-label="Send email"
+                          onClick={() => handleEmailClick(review.email)}
+                        >
+                          <MailOpen className="h-4 w-4 text-gray-500 hover:text-orange-500" />
+                        </Button>
+                      )}
 
-                    <div className="flex justify-between items-center mt-3">
-                      <motion.button
-                        className={`
-                          py-2 px-4 rounded-lg font-medium text-white
-                          ${review.replied 
-                            ? 'bg-gray-400' 
-                            : 'bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 shadow-md'
-                          }
-                        `}
-                        onClick={() => handleReplyClick(review)}
-                        whileHover={{ scale: review.replied ? 1 : 1.03 }}
-                        whileTap={{ scale: 0.98 }}
-                        disabled={review.replied}
-                      >
-                        {review.replied
-                          ? "Replied"
-                          : review.rating < 3
-                          ? "Reply Privately"
-                          : "Reply"}
-                      </motion.button>
+                      {review.phone && (
+                        <Button 
+                          variant="ghost" 
+                          size="icon" 
+                          className="h-8 w-8 hover:bg-orange-50"
+                          aria-label="Make phone call"
+                          onClick={() => handlePhoneClick(review.phone)}
+                        >
+                          <Phone className="h-4 w-4 text-gray-500 hover:text-orange-500" />
+                        </Button>
+                      )}
+                    </div>
 
+                    <div className="flex justify-end items-center mt-3">
                       <div className="flex gap-4 text-gray-500 text-lg items-center">
                         <Popover>
                           <PopoverTrigger asChild>
@@ -420,15 +396,6 @@ export default function BusinessReviews() {
           </div>
         </div>
       </div>
-
-      {/* Reply Modal */}
-      {selectedReview && (
-        <ReviewReplyModal
-          review={selectedReview}
-          onClose={() => setSelectedReview(null)}
-          onReply={handleReplyToReview}
-        />
-      )}
 
       {/* Delete Confirm Dialog */}
       <ConfirmDialog

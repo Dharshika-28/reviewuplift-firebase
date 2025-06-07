@@ -25,6 +25,7 @@ import BusinessForm from "./components/Business-form";
 import AccountPage from "./components/business/settings/account";
 import BusinessUsersPage from "./components/business/settings/businessusers";
 import LocationPage from "./components/business/settings/location";
+import AnalyticsPage from "./components/admin/analytics/page";
 
 import ReviewPage from "./components/business/review-link/review";
 import AdminRegistrationForm from "./components/admin/register/page";
@@ -78,6 +79,7 @@ function AppRoutes() {
         <Route path="/components/admin/businesses" element={<BusinessesPage />} />
         <Route path="/components/admin/users" element={<UsersPage />} />
         <Route path="/components/admin/register" element={<AdminRegistrationForm />} />
+        <Route path="/components/admin/analytics" element={<AnalyticsPage />}/>
         <Route path="/sidebar" element={<Sidebar />} />
         <Route path="/review" element={<ReviewPage />} />
         <Route path="*" element={<NotFound />} />
