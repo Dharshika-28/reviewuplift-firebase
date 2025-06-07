@@ -1,11 +1,50 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import { getAuth, onAuthStateChanged, signOut } from "firebase/auth";
+import { doc, getDoc } from "firebase/firestore";
+import { db } from "../firebase/firebase"; 
 
 const Navbar = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const location = useLocation();
+  const navigate = useNavigate();
   const isHomePage = location.pathname === "/";
+  const auth = getAuth();
+
+  // Check authentication state and user role
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        setIsLoggedIn(true);
+        try {
+          // Fetch user data from Firestore
+          const userDocRef = doc(db, "users", user.uid);
+          const userDocSnap = await getDoc(userDocRef);
+          
+          if (userDocSnap.exists()) {
+            const userData = userDocSnap.data();
+            setIsAdmin(userData?.role === "ADMIN");
+          } else {
+            console.log("User document not found");
+            setIsAdmin(false);
+          }
+        } catch (error) {
+          console.error("Error fetching user data:", error);
+          setIsAdmin(false);
+        }
+      } else {
+        setIsLoggedIn(false);
+        setIsAdmin(false);
+      }
+      setIsLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, [auth, location]); // Re-run when location changes
 
   const handleNavClick = (hash: string) => {
     if (isHomePage) {
@@ -14,16 +53,42 @@ const Navbar = () => {
         el.scrollIntoView({ behavior: "smooth" });
       }
     } else {
-      window.location.href = `/#${hash}`;
+      navigate(`/#${hash}`);
     }
     setIsMenuOpen(false);
   };
 
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+      setIsLoggedIn(false);
+      setIsAdmin(false);
+      navigate("/");
+      setIsMenuOpen(false);
+    } catch (error) {
+      console.error("Logout error:", error);
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <nav className="bg-white shadow-md sticky top-0 z-50">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex justify-between h-16 items-center">
+            {/* Loading skeleton */}
+            <div className="animate-pulse bg-gray-200 h-6 w-40 rounded" />
+            <div className="flex space-x-4">
+              <div className="animate-pulse bg-gray-200 h-9 w-24 rounded" />
+              <div className="animate-pulse bg-gray-200 h-9 w-24 rounded" />
+            </div>
+          </div>
+        </div>
+      </nav>
+    );
+  }
+
   return (
-    // You can change `sticky` to `fixed` if desired (see below)
     <nav className="bg-white shadow-md sticky top-0 z-50">
-      {/* If using `fixed`, uncomment below and replace `sticky` with `fixed` */}
-      {/* <nav className="bg-white shadow-md fixed top-0 w-full z-50"> */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-16 items-center">
           <div className="flex-shrink-0 flex items-center">
@@ -41,21 +106,35 @@ const Navbar = () => {
           </div>
 
           <div className="hidden md:flex items-center space-x-4">
-            <Link to="/login">
-              <Button variant="outline" className="border-orange-600 text-orange-600 hover:text-orange-700 hover:border-orange-700">
-                Login
-              </Button>
-            </Link>
-            <Link to="/payment">
-              <Button className="bg-orange-600 hover:bg-orange-700">
-                Get Started Free
-              </Button>
-            </Link>
-            <Link to="/components/admin/register">
-              <Button className="bg-orange-600 hover:bg-orange-700">
-                register
-              </Button>
-            </Link>
+            {isLoggedIn ? (
+              <>
+                <Link to={isAdmin ? "/components/admin/dashboard" : "/components/business/dashboard"}>
+                  <Button variant="ghost" className=" text-orange-600 hover:text-orange-700">
+                    Dashboard
+                  </Button>
+                </Link>
+                <Button 
+                  variant="outline" 
+                  className="border-orange-600 text-orange-600 hover:text-orange-700 hover:border-orange-700"
+                  onClick={handleLogout}
+                >
+                  Logout
+                </Button>
+              </>
+            ) : (
+              <>
+                <Link to="/login">
+                  <Button variant="outline" className="border-orange-600 text-orange-600 hover:text-orange-700 hover:border-orange-700">
+                    Login
+                  </Button>
+                </Link>
+                <Link to="/payment">
+                  <Button className="bg-orange-600 hover:bg-orange-700">
+                    Get Started Free
+                  </Button>
+                </Link>
+              </>
+            )}
           </div>
 
           <div className="flex md:hidden">
@@ -108,16 +187,35 @@ const Navbar = () => {
           <button onClick={() => handleNavClick("testimonials")} className="block w-full text-left px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:text-orange-600 hover:bg-gray-50">Testimonials</button>
           <button onClick={() => handleNavClick("faq")} className="block w-full text-left px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:text-orange-600 hover:bg-gray-50">FAQ</button>
           <div className="pt-4 border-t border-gray-200 flex flex-col gap-2">
-            <Link to="/login">
-              <Button variant="outline" className="w-full border-orange-600 text-orange-600 hover:text-orange-700 hover:border-orange-700">
-                Login
-              </Button>
-            </Link>
-            <Link to="/payment">
-              <Button className="w-full bg-orange-600 hover:bg-orange-700">
-                Get Started Free
-              </Button>
-            </Link>
+            {isLoggedIn ? (
+              <>
+                <Link to={isAdmin ? "/components/admin/dashboard" : "/components/business/dashboard"}>
+                  <Button variant="outline" className="w-full border-orange-600 text-orange-600 hover:text-orange-700 hover:border-orange-700">
+                    Dashboard
+                  </Button>
+                </Link>
+                <Button 
+                  variant="outline" 
+                  className="w-full border-orange-600 text-orange-600 hover:text-orange-700 hover:border-orange-700"
+                  onClick={handleLogout}
+                >
+                  Logout
+                </Button>
+              </>
+            ) : (
+              <>
+                <Link to="/login">
+                  <Button variant="outline" className="w-full border-orange-600 text-orange-600 hover:text-orange-700 hover:border-orange-700">
+                    Login
+                  </Button>
+                </Link>
+                <Link to="/payment">
+                  <Button className="w-full bg-orange-600 hover:bg-orange-700">
+                    Get Started Free
+                  </Button>
+                </Link>
+              </>
+            )}
           </div>
         </div>
       </div>

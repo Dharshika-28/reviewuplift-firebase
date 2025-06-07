@@ -65,7 +65,7 @@ export function SimpleAdminLayout({ children }: SimpleAdminLayoutProps) {
           <NavLinks />
         </nav>
 
-        <div className="absolute bottom-4 left-4 right-4 md:w-56">
+        <div className="absolute left-4 right-4 md:w-56">
           <Button
             variant="ghost"
             className="w-full flex items-center gap-3 justify-start text-red-600 hover:text-white hover:bg-red-500 px-4 py-2 transition-all duration-300 rounded-lg"

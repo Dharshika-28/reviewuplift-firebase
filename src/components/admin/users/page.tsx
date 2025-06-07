@@ -5,44 +5,57 @@ import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Search, Star, ChevronDown, RefreshCw, MoreVertical, Trash2, User, Edit, UserPlus } from "lucide-react"
+import { Search, RefreshCw, MoreVertical, Trash2, User, Edit, UserPlus } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
-import { collection, getDocs, onSnapshot, doc, updateDoc } from "firebase/firestore"
+import { collection, getDocs, onSnapshot, doc, updateDoc, deleteDoc, setDoc } from "firebase/firestore"
 import { db } from "@/firebase/firebase"
 import { format } from "date-fns"
 import { 
   DropdownMenu, 
   DropdownMenuContent, 
   DropdownMenuItem, 
-  DropdownMenuTrigger,
-  DropdownMenuSeparator
+  DropdownMenuTrigger
 } from "@/components/ui/dropdown-menu"
 import { Button } from "@/components/ui/button"
-import { Skeleton } from "@/components/ui/skeleton"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { useToast } from "@/components/ui/use-toast"
 
 interface User {
   uid: string;
   displayName: string;
   email: string;
-  role: "ADMIN" | "BUSINESS";
-  status: "Active" | "Inactive" | "Pending" | "Suspended" | "Deleted";
+  role: "ADMIN" | "BUSER";
+  status: "Active" | "Inactive" | "Pending" | "Deleted";
   createdAt: Date;
   businessName?: string;
-  deleted?: boolean;
+}
+
+interface UserFormData {
+  displayName: string;
+  email: string;
+  role: "ADMIN" | "BUSER" | "";
+  status: "Active" | "Inactive" | "Pending" | "Deleted" | "";
 }
 
 export default function UsersPage() {
+  const { toast } = useToast();
   const [searchQuery, setSearchQuery] = useState("")
   const [isLoading, setIsLoading] = useState(true)
-  const [users, setUsers] = useState<User[]>([])
+  const [businessUsers, setBusinessUsers] = useState<User[]>([])
+  const [adminUsers, setAdminUsers] = useState<User[]>([])
   const [statusFilter, setStatusFilter] = useState("all")
-  const [roleFilter, setRoleFilter] = useState("all") // NEW: Role filter state
   const [refreshing, setRefreshing] = useState(false)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [editingUser, setEditingUser] = useState<User | null>(null)
+  const [isSaving, setIsSaving] = useState(false)
+  const [formData, setFormData] = useState<UserFormData>({
+    displayName: "",
+    email: "",
+    role: "",
+    status: ""
+  })
 
   // Fetch users from Firestore
   useEffect(() => {
@@ -52,25 +65,33 @@ export default function UsersPage() {
         const usersCollection = collection(db, "users")
         const usersSnapshot = await getDocs(usersCollection)
         
-        const usersData: User[] = []
+        const businessData: User[] = []
+        const adminData: User[] = []
         
         usersSnapshot.forEach(userDoc => {
           const userData = userDoc.data()
           const createdAt = userData.createdAt?.toDate() || new Date()
           
-          usersData.push({
+          const userObj = {
             uid: userDoc.id,
             displayName: userData.displayName || "No Name",
             email: userData.email || "No Email",
-            role: userData.role || "BUSINESS",
+            role: userData.role || "BUSER",
             status: userData.status || "Pending",
             createdAt,
             businessName: userData.businessInfo?.businessName,
-            deleted: userData.deleted || false
-          })
+          }
+          
+          // FIX: Changed "BUSER" to "BUSINESS"
+          if (userObj.role === "BUSER") {
+            businessData.push(userObj)
+          } else if (userObj.role === "ADMIN") {
+            adminData.push(userObj)
+          }
         })
         
-        setUsers(usersData)
+        setBusinessUsers(businessData)
+        setAdminUsers(adminData)
       } catch (error) {
         console.error("Error fetching users:", error)
       } finally {
@@ -93,32 +114,35 @@ export default function UsersPage() {
     try {
       const userRef = doc(db, "users", userId)
       await updateDoc(userRef, { status: newStatus })
+      toast({
+        title: "Status Updated",
+        description: "User status has been changed successfully.",
+      });
     } catch (error) {
       console.error("Error updating user status:", error)
+      toast({
+        title: "Error",
+        description: "Failed to update user status.",
+        variant: "destructive",
+      });
     }
   }
 
   const handleDeleteUser = async (userId: string) => {
     try {
       const userRef = doc(db, "users", userId)
-      await updateDoc(userRef, { 
-        status: "Deleted",
-        deleted: true
-      })
+      await deleteDoc(userRef)
+      toast({
+        title: "User Deleted",
+        description: "User has been removed successfully.",
+      });
     } catch (error) {
       console.error("Error deleting user:", error)
-    }
-  }
-
-  const handleRestoreUser = async (userId: string) => {
-    try {
-      const userRef = doc(db, "users", userId)
-      await updateDoc(userRef, { 
-        status: "Active",
-        deleted: false
-      })
-    } catch (error) {
-      console.error("Error restoring user:", error)
+      toast({
+        title: "Error",
+        description: "Failed to delete user.",
+        variant: "destructive",
+      });
     }
   }
 
@@ -129,13 +153,19 @@ export default function UsersPage() {
     }, 1000)
   }
 
-  const filteredUsers = users.filter(
+  const filteredBusinessUsers = businessUsers.filter(
     (user) => (
       (user.displayName.toLowerCase().includes(searchQuery.toLowerCase()) ||
       user.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
       (user.businessName && user.businessName.toLowerCase().includes(searchQuery.toLowerCase()))) &&
-      (statusFilter === "all" || user.status === statusFilter) &&
-      (roleFilter === "all" || user.role === roleFilter) // NEW: Role filter
+      (statusFilter === "all" || user.status === statusFilter)
+    )
+  )
+  
+  const filteredAdminUsers = adminUsers.filter(
+    (user) => (
+      user.displayName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      user.email.toLowerCase().includes(searchQuery.toLowerCase())
     )
   )
   
@@ -147,8 +177,6 @@ export default function UsersPage() {
         return "bg-gray-100 text-gray-800 shadow-sm hover:shadow-gray-200 transition-shadow"
       case "Pending":
         return "bg-yellow-100 text-yellow-800 shadow-sm hover:shadow-yellow-200 transition-shadow"
-      case "Suspended":
-        return "bg-red-100 text-red-800 shadow-sm hover:shadow-red-200 transition-shadow"
       case "Deleted":
         return "bg-gray-300 text-gray-800 line-through"
       default:
@@ -162,12 +190,97 @@ export default function UsersPage() {
 
   const openEditDialog = (user: User) => {
     setEditingUser(user)
+    setFormData({
+      displayName: user.displayName,
+      email: user.email,
+      role: user.role,
+      status: user.status
+    })
+    setIsDialogOpen(true)
+  }
+
+  const openAddDialog = () => {
+    setEditingUser(null)
+    setFormData({
+      displayName: "",
+      email: "",
+      role: "",
+      status: "Pending"
+    })
     setIsDialogOpen(true)
   }
 
   const closeEditDialog = () => {
     setIsDialogOpen(false)
     setEditingUser(null)
+    setFormData({
+      displayName: "",
+      email: "",
+      role: "",
+      status: ""
+    })
+  }
+
+  const handleFormChange = (field: keyof UserFormData, value: string) => {
+    setFormData(prev => ({
+      ...prev,
+      [field]: value
+    }))
+  }
+
+  const handleSaveUser = async () => {
+    if (!formData.displayName || !formData.email || !formData.role || !formData.status) {
+      toast({
+        title: "Validation Error",
+        description: "Please fill all required fields.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    try {
+      setIsSaving(true)
+      
+      if (editingUser) {
+        // Update existing user
+        const userRef = doc(db, "users", editingUser.uid)
+        await updateDoc(userRef, {
+          displayName: formData.displayName,
+          email: formData.email,
+          role: formData.role,
+          status: formData.status
+        })
+        toast({
+          title: "User Updated",
+          description: "User details have been updated successfully.",
+        });
+      } else {
+        // Create new user
+        const newUserRef = doc(collection(db, "users"))
+        await setDoc(newUserRef, {
+          displayName: formData.displayName,
+          email: formData.email,
+          role: formData.role,
+          status: formData.status,
+          createdAt: new Date()
+        })
+        toast({
+          title: "User Created",
+          description: "New user has been added successfully.",
+        });
+      }
+      
+      closeEditDialog()
+    } catch (error) {
+      console.error("Error saving user:", error)
+      toast({
+        title: "Error",
+        description: "Failed to save user data.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   return (
@@ -183,7 +296,7 @@ export default function UsersPage() {
           
           <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
             <DialogTrigger asChild>
-              <Button className="bg-orange-600 hover:bg-orange-700">
+              <Button className="bg-orange-600 hover:bg-orange-700" onClick={openAddDialog}>
                 <UserPlus className="h-4 w-4 mr-2" /> Add User
               </Button>
             </DialogTrigger>
@@ -193,55 +306,77 @@ export default function UsersPage() {
               </DialogHeader>
               <div className="space-y-4 py-4">
                 <div className="space-y-2">
-                  <Label>Full Name</Label>
-                  <Input placeholder="John Doe" value={editingUser?.displayName || ""} />
+                  <Label>Full Name *</Label>
+                  <Input 
+                    placeholder="John Doe" 
+                    value={formData.displayName} 
+                    onChange={(e) => handleFormChange("displayName", e.target.value)}
+                  />
                 </div>
                 
                 <div className="space-y-2">
-                  <Label>Email</Label>
-                  <Input placeholder="john@example.com" type="email" value={editingUser?.email || ""} />
+                  <Label>Email *</Label>
+                  <Input 
+                    placeholder="john@example.com" 
+                    type="email" 
+                    value={formData.email} 
+                    onChange={(e) => handleFormChange("email", e.target.value)}
+                  />
                 </div>
                 
                 <div className="space-y-2">
-                  <Label>Role</Label>
-                  <Select>
+                  <Label>Role *</Label>
+                  <Select 
+                    value={formData.role} 
+                    onValueChange={(value) => handleFormChange("role", value as "ADMIN" | "BUSER")}
+                  >
                     <SelectTrigger>
-                      <SelectValue placeholder={editingUser?.role || "Select role"} />
+                      <SelectValue placeholder="Select role" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="ADMIN">Admin</SelectItem>
-                      <SelectItem value="BUSINESS">Business User</SelectItem>
+                      <SelectItem value="BUSER">Business User</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 
                 <div className="space-y-2">
-                  <Label>Status</Label>
-                  <Select>
+                  <Label>Status *</Label>
+                  <Select 
+                    value={formData.status} 
+                    onValueChange={(value) => handleFormChange("status", value)}
+                  >
                     <SelectTrigger>
-                      <SelectValue placeholder={editingUser?.status || "Select status"} />
+                      <SelectValue placeholder="Select status" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="Active">Active</SelectItem>
                       <SelectItem value="Pending">Pending</SelectItem>
-                      <SelectItem value="Suspended">Suspended</SelectItem>
+                      <SelectItem value="Inactive">Inactive</SelectItem>
                       <SelectItem value="Deleted">Deleted</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
-                
-                <div className="flex justify-end space-x-2 pt-4">
-                  <Button variant="outline" onClick={closeEditDialog}>Cancel</Button>
-                  <Button className="bg-orange-600 hover:bg-orange-700">Save Changes</Button>
-                </div>
               </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={closeEditDialog} disabled={isSaving}>
+                  Cancel
+                </Button>
+                <Button 
+                  className="bg-orange-600 hover:bg-orange-700" 
+                  onClick={handleSaveUser}
+                  disabled={isSaving}
+                >
+                  {isSaving ? "Saving..." : "Save Changes"}
+                </Button>
+              </DialogFooter>
             </DialogContent>
           </Dialog>
         </div>
 
         <Card className="border-orange-200 shadow-lg transition-all hover:shadow-xl">
           <CardHeader className="flex flex-row items-center justify-between bg-gradient-to-r from-orange-50 to-white rounded-t-lg">
-            <CardTitle className="text-xl font-bold text-orange-800">All Users</CardTitle>
+            <CardTitle className="text-xl font-bold text-orange-800">Business Users</CardTitle>
             <div className="flex items-center space-x-3">
               <div className="relative">
                 <Select onValueChange={setStatusFilter}>
@@ -252,22 +387,8 @@ export default function UsersPage() {
                     <SelectItem value="all">All Status</SelectItem>
                     <SelectItem value="Active">Active</SelectItem>
                     <SelectItem value="Pending">Pending</SelectItem>
-                    <SelectItem value="Suspended">Suspended</SelectItem>
+                    <SelectItem value="Inactive">Inactive</SelectItem>
                     <SelectItem value="Deleted">Deleted</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              
-              {/* NEW: Role filter dropdown */}
-              <div className="relative">
-                <Select onValueChange={setRoleFilter}>
-                  <SelectTrigger className="w-[180px] border-orange-200">
-                    <SelectValue placeholder="All Roles" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Roles</SelectItem>
-                    <SelectItem value="ADMIN">Admin</SelectItem>
-                    <SelectItem value="BUSINESS">Business User</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -303,16 +424,16 @@ export default function UsersPage() {
                   </div>
                 </div>
               </div>
-            ) : filteredUsers.length === 0 ? (
+            ) : filteredBusinessUsers.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-64 text-gray-500 p-4 text-center">
                 <div className="bg-gray-100 p-4 rounded-full mb-4">
                   <Search className="h-10 w-10 text-gray-400" />
                 </div>
-                <h3 className="text-lg font-medium mb-1">No users found</h3>
+                <h3 className="text-lg font-medium mb-1">No business users found</h3>
                 <p className="max-w-md">
                   {searchQuery 
                     ? "No users match your search. Try different keywords." 
-                    : "No users registered yet. New users will appear here once they sign up."}
+                    : "No business users registered yet."}
                 </p>
               </div>
             ) : (
@@ -322,19 +443,6 @@ export default function UsersPage() {
                     <TableHead className="font-bold text-orange-800">Name</TableHead>
                     <TableHead className="font-bold text-orange-800">Email</TableHead>
                     <TableHead className="font-bold text-orange-800">Business</TableHead>
-                    
-                    {/* UPDATED: Role header with filter indicator */}
-                    <TableHead className="font-bold text-orange-800">
-                      <div className="flex items-center">
-                        Role
-                        {roleFilter !== "all" && (
-                          <Badge variant="outline" className="ml-2 border-orange-300 text-orange-600 bg-orange-50">
-                            {roleFilter === "ADMIN" ? "Admin" : "Business"}
-                          </Badge>
-                        )}
-                      </div>
-                    </TableHead>
-                    
                     <TableHead className="font-bold text-orange-800">Status</TableHead>
                     <TableHead className="font-bold text-orange-800">Joined</TableHead>
                     <TableHead className="font-bold text-orange-800 text-right">Actions</TableHead>
@@ -342,7 +450,7 @@ export default function UsersPage() {
                 </TableHeader>
                 <TableBody>
                   <AnimatePresence>
-                    {filteredUsers.map((user) => (
+                    {filteredBusinessUsers.map((user) => (
                       <motion.tr 
                         key={user.uid}
                         className="border-b border-orange-100 hover:bg-orange-50 transition-all duration-200"
@@ -372,20 +480,29 @@ export default function UsersPage() {
                         </TableCell>
                         
                         <TableCell>
-                          <Badge
-                            variant={user.role === "ADMIN" ? "default" : "outline"}
-                            className={`${user.role === "ADMIN" ? "bg-gradient-to-r from-orange-500 to-orange-400 text-white shadow-sm" : "border-orange-200 text-orange-700 bg-orange-50"} transition-all hover:scale-105`}
-                          >
-                            {user.role === "ADMIN" ? "Admin" : "Business User"}
-                          </Badge>
-                        </TableCell>
-                        
-                        <TableCell>
-                          <Badge 
-                            className={`${getStatusColor(user.status)} transition-all hover:scale-105 cursor-pointer`}
-                          >
-                            {user.status}
-                          </Badge>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger>
+                              <Badge 
+                                className={`${getStatusColor(user.status)} transition-all hover:scale-105 cursor-pointer`}
+                              >
+                                {user.status}
+                              </Badge>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent>
+                              <DropdownMenuItem onClick={() => handleStatusChange(user.uid, "Active")}>
+                                Active
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleStatusChange(user.uid, "Pending")}>
+                                Pending
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleStatusChange(user.uid, "Inactive")}>
+                                Inactive
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleStatusChange(user.uid, "Deleted")}>
+                                Deleted
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         </TableCell>
                         <TableCell className="text-gray-600">
                           {format(user.createdAt, "MMM d, yyyy")}
@@ -403,25 +520,147 @@ export default function UsersPage() {
                                 Edit
                               </DropdownMenuItem>
                               
-                              {user.status === "Deleted" ? (
-                                <DropdownMenuItem onClick={() => handleRestoreUser(user.uid)}>
-                                  <User className="mr-2 h-4 w-4 text-green-600" />
-                                  <span className="text-green-600">Restore</span>
-                                </DropdownMenuItem>
-                              ) : (
-                                <DropdownMenuItem onClick={() => handleDeleteUser(user.uid)}>
-                                  <Trash2 className="mr-2 h-4 w-4 text-red-600" />
-                                  <span className="text-red-600">Delete</span>
-                                </DropdownMenuItem>
-                              )}
-                              
-                              <DropdownMenuSeparator />
-                              
-                              <DropdownMenuItem onClick={() => handleStatusChange(user.uid, "Active")}>
-                                Set Active
+                              <DropdownMenuItem onClick={() => handleDeleteUser(user.uid)}>
+                                <Trash2 className="mr-2 h-4 w-4 text-red-600" />
+                                <span className="text-red-600">Delete</span>
                               </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => handleStatusChange(user.uid, "Suspended")}>
-                                Suspend
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </TableCell>
+                      </motion.tr>
+                    ))}
+                  </AnimatePresence>
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Admin Users Section */}
+        <Card className="border-blue-200 shadow-lg transition-all hover:shadow-xl">
+          <CardHeader className="flex flex-row items-center justify-between bg-gradient-to-r from-blue-50 to-white rounded-t-lg">
+            <CardTitle className="text-xl font-bold text-blue-800">Admin Users</CardTitle>
+            <div className="flex items-center space-x-3">
+              <div className="relative w-64">
+                <Search className="absolute left-2 top-2.5 h-4 w-4 text-blue-400" />
+                <Input
+                  placeholder="Search admins..."
+                  className="pl-8 border-blue-200 focus:ring-2 focus:ring-blue-300 focus:border-transparent transition-all"
+                  value={searchQuery}
+                  onChange={handleSearch}
+                />
+              </div>
+              
+              <Button 
+                variant="outline" 
+                size="icon"
+                className="border-blue-300 text-blue-600 hover:bg-blue-50"
+                onClick={handleRefresh}
+              >
+                <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent className="p-0">
+            {isLoading ? (
+              <div className="flex justify-center items-center h-64">
+                <div className="animate-pulse flex space-x-4">
+                  <div className="rounded-full bg-blue-200 h-12 w-12"></div>
+                  <div className="space-y-2">
+                    <div className="h-4 bg-blue-200 rounded w-64"></div>
+                    <div className="h-4 bg-blue-200 rounded w-56"></div>
+                  </div>
+                </div>
+              </div>
+            ) : filteredAdminUsers.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-64 text-gray-500 p-4 text-center">
+                <div className="bg-gray-100 p-4 rounded-full mb-4">
+                  <User className="h-10 w-10 text-gray-400" />
+                </div>
+                <h3 className="text-lg font-medium mb-1">No admin users found</h3>
+                <p className="max-w-md">
+                  {searchQuery 
+                    ? "No admins match your search." 
+                    : "Add new admins using the 'Add User' button."}
+                </p>
+              </div>
+            ) : (
+              <Table className="rounded-lg overflow-hidden">
+                <TableHeader className="bg-blue-50">
+                  <TableRow className="hover:bg-blue-50">
+                    <TableHead className="font-bold text-blue-800">Name</TableHead>
+                    <TableHead className="font-bold text-blue-800">Email</TableHead>
+                    <TableHead className="font-bold text-blue-800">Status</TableHead>
+                    <TableHead className="font-bold text-blue-800">Joined</TableHead>
+                    <TableHead className="font-bold text-blue-800 text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  <AnimatePresence>
+                    {filteredAdminUsers.map((user) => (
+                      <motion.tr 
+                        key={user.uid}
+                        className="border-b border-blue-100 hover:bg-blue-50 transition-all duration-200"
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, height: 0 }}
+                        transition={{ duration: 0.2 }}
+                      >
+                        <TableCell className="font-medium group">
+                          <span className="group-hover:text-blue-600 transition-colors">
+                            {user.displayName}
+                          </span>
+                        </TableCell>
+                        <TableCell className="group">
+                          <span className="group-hover:text-blue-500 transition-colors">
+                            {user.email}
+                          </span>
+                        </TableCell>
+                        
+                        <TableCell>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger>
+                              <Badge 
+                                className={`${getStatusColor(user.status)} transition-all hover:scale-105 cursor-pointer`}
+                              >
+                                {user.status}
+                              </Badge>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent>
+                              <DropdownMenuItem onClick={() => handleStatusChange(user.uid, "Active")}>
+                                Active
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleStatusChange(user.uid, "Pending")}>
+                                Pending
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleStatusChange(user.uid, "Inactive")}>
+                                Inactive
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleStatusChange(user.uid, "Deleted")}>
+                                Deleted
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </TableCell>
+                        <TableCell className="text-gray-600">
+                          {format(user.createdAt, "MMM d, yyyy")}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" className="h-8 w-8 p-0">
+                                <MoreVertical className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => openEditDialog(user)}>
+                                <Edit className="mr-2 h-4 w-4" />
+                                Edit
+                              </DropdownMenuItem>
+                              
+                              <DropdownMenuItem onClick={() => handleDeleteUser(user.uid)}>
+                                <Trash2 className="mr-2 h-4 w-4 text-red-600" />
+                                <span className="text-red-600">Delete</span>
                               </DropdownMenuItem>
                             </DropdownMenuContent>
                           </DropdownMenu>

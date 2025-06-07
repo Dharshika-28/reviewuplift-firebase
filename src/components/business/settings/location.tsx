@@ -16,6 +16,7 @@ import {
   CheckIcon,
   XIcon,
   MapPinIcon,
+  LinkIcon,
 } from "lucide-react";
 import {
   Tooltip,
@@ -34,6 +35,7 @@ interface Branch {
   id: string;
   name: string;
   location: string;
+  googleReviewLink: string; // Added Google Review Link field
   createdAt: string;
   isActive: boolean;
   isExpanded?: boolean;
@@ -49,11 +51,13 @@ export default function LocationPage() {
   const [newBranch, setNewBranch] = useState({
     name: "",
     location: "",
+    googleReviewLink: "", // Added to new branch state
   });
   const [editData, setEditData] = useState({
     id: "",
     name: "",
     location: "",
+    googleReviewLink: "", // Added to edit state
   });
   const [loading, setLoading] = useState(true);
   const [isOnline, setIsOnline] = useState(
@@ -103,6 +107,8 @@ export default function LocationPage() {
             id: branch.id || `branch-${Math.random().toString(36).substr(2, 9)}`,
             createdAt: branch.createdAt || new Date().toISOString(),
             isActive: branch.isActive !== undefined ? branch.isActive : true,
+            // Ensure googleReviewLink exists
+            googleReviewLink: branch.googleReviewLink || ""
           };
         });
         setBranches(branchesWithId);
@@ -137,6 +143,7 @@ export default function LocationPage() {
           id: branch.id,
           name: branch.name,
           location: branch.location,
+          googleReviewLink: branch.googleReviewLink, // Added to update
           isActive: branch.isActive,
           createdAt: branch.createdAt,
         }))
@@ -150,7 +157,7 @@ export default function LocationPage() {
 
   const handleAddBranch = async () => {
     if (!newBranch.name.trim() || !newBranch.location.trim()) {
-      toast.error("Please fill all fields");
+      toast.error("Please fill all required fields");
       return;
     }
 
@@ -159,6 +166,7 @@ export default function LocationPage() {
         id: generateId(),
         name: newBranch.name.trim(),
         location: newBranch.location.trim(),
+        googleReviewLink: newBranch.googleReviewLink.trim(), // Added
         createdAt: new Date().toISOString(),
         isActive: true,
       };
@@ -166,7 +174,7 @@ export default function LocationPage() {
       const updatedBranches = [...branches, branchToAdd];
       await updateFirebaseBranches(updatedBranches);
       setBranches(updatedBranches);
-      setNewBranch({ name: "", location: "" });
+      setNewBranch({ name: "", location: "", googleReviewLink: "" });
       setIsAdding(false);
       toast.success("Branch added successfully");
     } catch (error) {
@@ -218,6 +226,7 @@ export default function LocationPage() {
       id: branch.id,
       name: branch.name,
       location: branch.location,
+      googleReviewLink: branch.googleReviewLink || "", // Added
     });
     setBranches(
       branches.map((b) => (b.id === branch.id ? { ...b, isEditing: true } : b))
@@ -232,7 +241,7 @@ export default function LocationPage() {
 
   const saveEditing = async (id: string) => {
     if (!editData.name.trim() || !editData.location.trim()) {
-      toast.error("Please fill all fields");
+      toast.error("Please fill all required fields");
       return;
     }
 
@@ -243,6 +252,7 @@ export default function LocationPage() {
               ...branch,
               name: editData.name.trim(),
               location: editData.location.trim(),
+              googleReviewLink: editData.googleReviewLink.trim(), // Added
               isEditing: false,
             }
           : branch
@@ -361,7 +371,7 @@ export default function LocationPage() {
               <CardContent className="space-y-3 p-4 pt-0">
                 <div className="space-y-2">
                   <label className="text-sm font-medium leading-none">
-                    Branch Name
+                    Branch Name <span className="text-red-500">*</span>
                   </label>
                   <Input
                     placeholder="Enter branch name"
@@ -373,7 +383,7 @@ export default function LocationPage() {
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm font-medium leading-none">
-                    Branch Location
+                    Branch Location <span className="text-red-500">*</span>
                   </label>
                   <Input
                     placeholder="Enter full address"
@@ -382,6 +392,21 @@ export default function LocationPage() {
                       setNewBranch({ ...newBranch, location: e.target.value })
                     }
                   />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium leading-none">
+                    Google Review Link
+                  </label>
+                  <Input
+                    placeholder="https://g.page/review?link=..."
+                    value={newBranch.googleReviewLink}
+                    onChange={(e) =>
+                      setNewBranch({ ...newBranch, googleReviewLink: e.target.value })
+                    }
+                  />
+                  <p className="text-xs text-gray-500">
+                    Optional - Add a direct link to this branch's Google reviews
+                  </p>
                 </div>
                 <div className="flex justify-end space-x-2 pt-2">
                   <Button
@@ -609,6 +634,34 @@ export default function LocationPage() {
                             Branch ID
                           </h4>
                           <p className="text-sm">{branch.id}</p>
+                        </div>
+                        
+                        {/* Google Review Link Section */}
+                        <div className="md:col-span-2">
+                          <h4 className="text-xs font-medium text-muted-foreground flex items-center">
+                            <LinkIcon className="h-3 w-3 mr-1" />
+                            Google Review Link
+                          </h4>
+                          {branch.isEditing ? (
+                            <Input
+                              name="googleReviewLink"
+                              value={editData.googleReviewLink}
+                              onChange={handleEditChange}
+                              className="text-sm h-8"
+                              placeholder="https://g.page/review?link=..."
+                            />
+                          ) : branch.googleReviewLink ? (
+                            <a 
+                              href={branch.googleReviewLink} 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              className="text-sm text-blue-500 hover:underline truncate block"
+                            >
+                              {branch.googleReviewLink}
+                            </a>
+                          ) : (
+                            <p className="text-sm text-gray-500 italic">No review link added</p>
+                          )}
                         </div>
                       </div>
                     </CardContent>

@@ -1,5 +1,5 @@
-import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
-import { useEffect } from "react";
+import React, { useEffect } from "react";
+import { BrowserRouter, Routes, Route, useLocation, useParams } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/toaster";
@@ -29,8 +29,10 @@ import AnalyticsPage from "./components/admin/analytics/page";
 
 import ReviewPage from "./components/business/review-link/review";
 import AdminRegistrationForm from "./components/admin/register/page";
+import BusinessDetailsPage from "./components/admin/business/[uid]";
+import SubscriptionPage from "./components/admin/subscriptions/[uid]";
 
-// Custom hook to scroll to hash section on route change
+// Custom hook to scroll to hash on navigation
 function useScrollToHash() {
   const location = useLocation();
 
@@ -48,7 +50,7 @@ function useScrollToHash() {
   }, [location]);
 }
 
-//  This function handles conditional rendering of Navbar
+// AppRoutes component with conditional Navbar rendering
 function AppRoutes() {
   useScrollToHash();
   const location = useLocation();
@@ -79,7 +81,13 @@ function AppRoutes() {
         <Route path="/components/admin/businesses" element={<BusinessesPage />} />
         <Route path="/components/admin/users" element={<UsersPage />} />
         <Route path="/components/admin/register" element={<AdminRegistrationForm />} />
-        <Route path="/components/admin/analytics" element={<AnalyticsPage />}/>
+        <Route path="/components/admin/analytics" element={<AnalyticsPage />} />
+        <Route path="/admin/businesses/:uid" element={<BusinessDetailsPage params={{
+          uid: ""
+        }} />} />
+        <Route path="/admin/subscriptions/:uid" element={<SubscriptionPage params={{
+          uid: ""
+        }} />} />
         <Route path="/sidebar" element={<Sidebar />} />
         <Route path="/review" element={<ReviewPage />} />
         <Route path="*" element={<NotFound />} />

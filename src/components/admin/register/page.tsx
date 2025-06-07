@@ -28,6 +28,8 @@ import {
   updateDoc,
   serverTimestamp,
 } from "firebase/firestore";
+import { SimpleAdminLayout } from "@/components/simple-admin-layout"
+
 
 export default function AdminRegistrationForm() {
   const [showEmailForm, setShowEmailForm] = useState(false);
@@ -227,9 +229,20 @@ export default function AdminRegistrationForm() {
     } finally {
       setLoading(false);
     }
+
+    if (loading) {
+    return (
+      <SimpleAdminLayout>
+        <div className="flex justify-center items-center h-screen">
+          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-orange-500"></div>
+        </div>
+      </SimpleAdminLayout>
+    )
+  }
   };
 
   return (
+    <SimpleAdminLayout>
     <div className="min-h-screen flex items-center justify-center bg-[#f7f8fa]">
       <div className="w-full max-w-md bg-white rounded-2xl shadow-md p-8">
         <div className="flex justify-between items-center mb-4">
@@ -415,5 +428,6 @@ export default function AdminRegistrationForm() {
         </p>
       </div>
     </div>
+    </SimpleAdminLayout>
   );
 }

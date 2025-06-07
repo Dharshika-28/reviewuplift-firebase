@@ -242,7 +242,7 @@ export default function AdminDashboard() {
         >
           <Card className="border border-orange-200 shadow-md transition-all hover:shadow-xl">
             <CardHeader className="bg-gradient-to-r from-orange-50 to-white rounded-t-lg">
-              <CardTitle className="text-xl font-bold text-orange-800">Recent Business Logins</CardTitle>
+              <CardTitle className="text-xl font-bold text-orange-800">Recent Business Registerations</CardTitle>
             </CardHeader>
             <CardContent className="p-4">
               <div className="space-y-3">

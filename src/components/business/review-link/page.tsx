@@ -13,18 +13,13 @@ import { useNavigate } from "react-router-dom"
 import { Textarea } from "@/components/ui/textarea"
 import { auth, db, storage } from "@/firebase/firebase"
 import { doc, getDoc, setDoc, serverTimestamp, collection, addDoc } from "firebase/firestore"
-import { ref, uploadBytes, getDownloadURL } from "firebase/storage"
+import { ref, uploadBytes, getDownloadURL, deleteObject } from "firebase/storage"
 import { onAuthStateChanged } from "firebase/auth"
 import { motion } from "framer-motion"
+import { v4 as uuidv4 } from 'uuid'; // Added UUID library
+import { toast } from "sonner" // Added toast notifications
 
-// Add UUID generation function
-const generateUUID = () => {
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-    const r = Math.random() * 16 | 0,
-      v = c === 'x' ? r : (r & 0x3 | 0x8);
-    return v.toString(16);
-  });
-};
+// Removed custom UUID function and using uuidv4 instead
 
 const initialState = {
   businessName: "",
@@ -82,7 +77,9 @@ export default function ReviewLinkPage() {
   const [logoUploading, setLogoUploading] = useState(false)
   const [previewImageUploading, setPreviewImageUploading] = useState(false)
   const [loading, setLoading] = useState(true)
-  const [googleReviewLink, setGoogleReviewLink] = useState("") // NEW: Google review link state
+  const [googleReviewLink, setGoogleReviewLink] = useState("")
+  const [oldPreviewImageUrl, setOldPreviewImageUrl] = useState<string | null>(null) // Track previous image URLs
+  const [oldLogoImageUrl, setOldLogoImageUrl] = useState<string | null>(null)
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
@@ -102,7 +99,10 @@ export default function ReviewLinkPage() {
             setLogoImage(data.logoImage || null);
             setIsReviewGatingEnabled(data.isReviewGatingEnabled ?? true);
             
-            // Auto-generate review URL from business name
+            // Store old URLs for cleanup
+            setOldPreviewImageUrl(data.previewImage || null);
+            setOldLogoImageUrl(data.logoImage || null);
+            
             let reviewUrl = data.reviewLinkUrl;
             if (!reviewUrl) {
               const slug = data.businessName 
@@ -111,17 +111,13 @@ export default function ReviewLinkPage() {
               reviewUrl = `https://go.reviewuplift.com/${slug}`;
             }
             setReviewLinkUrl(reviewUrl);
-            
-            // Extract slug for editing
-            const slug = reviewUrl.replace('https://go.reviewuplift.com/', '');
-            setTempBusinessSlug(slug);
+            setTempBusinessSlug(reviewUrl.replace('https://go.reviewuplift.com/', ''));
           } else {
-            // New user - set default URL placeholder
             setReviewLinkUrl(`https://go.reviewuplift.com/your-business`);
             setTempBusinessSlug('your-business');
           }
 
-          // NEW: Load Google review link from businessInfo
+          // Load Google review link
           const userDocRef = doc(db, "users", user.uid);
           const userDocSnap = await getDoc(userDocRef);
           if (userDocSnap.exists()) {
@@ -131,6 +127,7 @@ export default function ReviewLinkPage() {
           }
         } catch (error) {
           console.error("Error loading config:", error);
+          toast.error("Failed to load configuration");
         } finally {
           setLoading(false);
         }
@@ -160,6 +157,7 @@ export default function ReviewLinkPage() {
         await setDoc(doc(db, "review_link", currentUser.uid), config, { merge: true });
       } catch (error) {
         console.error("Error saving config:", error);
+        toast.error("Failed to save configuration");
       }
     };
     
@@ -201,58 +199,130 @@ export default function ReviewLinkPage() {
     setIsEditingPreview(!isEditingPreview)
   }
 
-  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
+  // Improved image upload handler
+   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
     if (!file || !currentUser) return;
-    
+
+    const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+    if (!validTypes.includes(file.type)) {
+      toast.error("Invalid file type. Please upload JPG, PNG, or WEBP.");
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("File too large. Max 5MB.");
+      return;
+    }
+
     setPreviewImageUploading(true);
     try {
-      // Generate unique filename with UUID
       const extension = file.name.split('.').pop();
-      const uniqueFilename = `${generateUUID()}.${extension}`;
-      
-      // Use organized storage path
-      const storageRef = ref(storage, `preview-images/${currentUser.uid}/${uniqueFilename}`);
-      
-      await uploadBytes(storageRef, file);
-      const url = await getDownloadURL(storageRef);
+      const uniqueFilename = `${uuidv4()}.${extension}`;
+      const storageRefPath = `users/${currentUser.uid}/preview-images/${uniqueFilename}`;
+      const storageRefInstance = ref(storage, storageRefPath);
+
+      await uploadBytes(storageRefInstance, file);
+      const url = await getDownloadURL(storageRefInstance);
       setPreviewImage(url);
-    } catch (error) {
-      console.error("Error uploading image:", error);
+      toast.success("Preview image uploaded!");
+
+      if (oldPreviewImageUrl) {
+        try {
+          const oldRef = ref(storage, oldPreviewImageUrl);
+          await deleteObject(oldRef);
+        } catch (err) {
+          console.warn("Failed to delete old preview image", err);
+        }
+      }
+      setOldPreviewImageUrl(storageRefPath);
+    } catch (err) {
+      console.error("Error uploading preview image:", err);
+      toast.error("Upload failed.");
     } finally {
       setPreviewImageUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
     }
-  }
+  };
 
+  // ✅ Upload logo
   const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
+    const file = e.target.files?.[0];
     if (!file || !currentUser) return;
-    
+
+    const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/svg+xml'];
+    if (!validTypes.includes(file.type)) {
+      toast.error("Invalid logo type. Use JPG, PNG, WEBP, or SVG.");
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error("Logo too large. Max 2MB.");
+      return;
+    }
+
     setLogoUploading(true);
     try {
-      // Generate unique filename with UUID
       const extension = file.name.split('.').pop();
-      const uniqueFilename = `${generateUUID()}.${extension}`;
-      
-      // Use organized storage path
-      const storageRef = ref(storage, `logos/${currentUser.uid}/${uniqueFilename}`);
-      
-      await uploadBytes(storageRef, file);
-      const url = await getDownloadURL(storageRef);
+      const uniqueFilename = `${uuidv4()}.${extension}`;
+      const storageRefPath = `users/${currentUser.uid}/logos/${uniqueFilename}`;
+      const storageRefInstance = ref(storage, storageRefPath);
+
+      await uploadBytes(storageRefInstance, file);
+      const url = await getDownloadURL(storageRefInstance);
       setLogoImage(url);
-    } catch (error) {
-      console.error("Error uploading logo:", error);
+      toast.success("Logo uploaded!");
+
+      if (oldLogoImageUrl) {
+        try {
+          const oldRef = ref(storage, oldLogoImageUrl);
+          await deleteObject(oldRef);
+        } catch (err) {
+          console.warn("Failed to delete old logo", err);
+        }
+      }
+      setOldLogoImageUrl(storageRefPath);
+    } catch (err) {
+      console.error("Error uploading logo:", err);
+      toast.error("Upload failed.");
     } finally {
       setLogoUploading(false);
+      if (logoInputRef.current) logoInputRef.current.value = '';
+    }
+  };
+  
+  // Improved image deletion
+  const handleDeleteImage = async () => {
+    if (previewImage) {
+      try {
+        const imageRef = ref(storage, previewImage);
+        await deleteObject(imageRef);
+        setPreviewImage(null);
+        setOldPreviewImageUrl(null);
+        toast.success("Image removed successfully");
+      } catch (error) {
+        console.error("Error deleting image:", error);
+        toast.error("Failed to remove image");
+      }
+    } else {
+      setPreviewImage(null);
     }
   }
-  
-  const handleDeleteImage = async () => {
-    setPreviewImage(null);
-  }
 
+  // Improved logo deletion
   const handleDeleteLogo = async () => {
-    setLogoImage(null);
+    if (logoImage) {
+      try {
+        const logoRef = ref(storage, logoImage);
+        await deleteObject(logoRef);
+        setLogoImage(null);
+        setOldLogoImageUrl(null);
+        toast.success("Logo removed successfully");
+      } catch (error) {
+        console.error("Error deleting logo:", error);
+        toast.error("Failed to remove logo");
+      }
+    } else {
+      setLogoImage(null);
+    }
   }
 
   const triggerFileInput = () => {
@@ -262,7 +332,6 @@ export default function ReviewLinkPage() {
   const triggerLogoInput = () => {
     logoInputRef.current?.click()
   }
-
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target
     setFormData(prev => ({ ...prev, [name]: value }))
